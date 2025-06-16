@@ -6,9 +6,7 @@ from typing import List, Tuple, Optional, Dict, Any
 import io
 import warnings
 from datetime import datetime
-import requests
 import time
-import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 
 # BioPython imports with error handling
