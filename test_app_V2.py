@@ -480,7 +480,7 @@ class SangerAnalysisApp:
 
         st.title("🧬 Enhanced Sanger Sequencing Analysis")
         st.markdown(
-            "Upload AB1 chromatogram files for forward and reverse reads to generate consensus sequences and perform BLAST analysis")w
+            "Upload AB1 chromatogram files for forward and reverse reads to generate consensus sequences and perform BLAST analysis")
 
         if not BIOPYTHON_AVAILABLE:
             st.error("BioPython is required for this application. Please install it with: pip install biopython")
