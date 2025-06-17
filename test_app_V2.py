@@ -480,7 +480,7 @@ class SangerAnalysisApp:
 
         st.title("🧬 Enhanced Sanger Sequencing Analysis")
         st.markdown(
-            "Upload AB1 chromatogram files for forward and reverse reads to generate consensus sequences and perform BLAST analysis")
+            "Upload AB1 chromatogram files for forward and reverse reads to generate consensus sequences and perform BLAST analysis")w
 
         if not BIOPYTHON_AVAILABLE:
             st.error("BioPython is required for this application. Please install it with: pip install biopython")
@@ -493,7 +493,7 @@ class SangerAnalysisApp:
         # Quality trimming parameters
         st.sidebar.subheader("Quality Trimming")
         quality_cutoff = st.sidebar.slider("Quality Cutoff", 10, 40, 20, help="Minimum quality score threshold")
-        window_size = st.sidebar.slider("Window Size", 2, 20, 10, help="Size of sliding window for quality assessment")
+        window_size = st.sidebar.slider("Window Size", 2, 30, 10, help="Size of sliding window for quality assessment")
         trim_end = st.sidebar.checkbox("Trim End", False, help="Whether to trim low quality from end")
 
         # Consensus parameters
