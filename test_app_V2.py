@@ -172,7 +172,7 @@ def align_sequences(seq1: Seq, seq2: Seq, consensus_method: str = "sanger") -> A
             consensus_chars, matches, mismatches, gaps = SequenceAligner._generate_sanger_consensus(
                 aligned_seqA, aligned_seqB
             )
-        if consensus_method == "quality":
+        elif consensus_method == "quality":
             consensus_chars, matches, mismatches, gaps = SequenceAligner._generate_quality_based_consensus(
                 aligned_seqA, aligned_seqB
             )
