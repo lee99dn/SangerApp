@@ -151,7 +151,7 @@ class SequenceAligner:
 
     @staticmethod
     def align_sequences(seq1: Seq, seq2: Seq, consensus_method: str = "sanger") -> AlignmentResult:
-    """Align two sequences and generate consensus."""
+        """Align two sequences and generate consensus."""
         try:
         # EMBOSS-style scoring parameters
             aligner = PairwiseAligner()
@@ -199,7 +199,7 @@ class SequenceAligner:
 
     @staticmethod
     def _generate_sanger_consensus(aligned_seqA: str, aligned_seqB: str):
-    """Generate consensus using Sanger-specific logic (trust reverse after first match)."""
+        """Generate consensus using Sanger-specific logic (trust reverse after first match)."""
         consensus_chars = []
         matches = mismatches = gaps = 0
         first_match_found = False
@@ -229,7 +229,7 @@ class SequenceAligner:
 
     @staticmethod
     def _generate_quality_based_consensus(aligned_seqA: str, aligned_seqB: str):
-    """Generate consensus using quality-based approach (recommended for Sanger)."""
+        """Generate consensus using quality-based approach (recommended for Sanger)."""
         consensus_chars = []
         matches = mismatches = gaps = 0
 
@@ -267,10 +267,10 @@ class SequenceAligner:
 
     @staticmethod
     def _calculate_position_quality(position: int, total_length: int, is_forward: bool) -> float:
-    """
-    Calculate position-based quality weight for consensus.
-    This is a simplified heuristic - real implementation would use actual quality scores.
-    """
+        """
+        Calculate position-based quality weight for consensus.
+        This is a simplified heuristic - real implementation would use actual quality scores.
+        """
     # Normalize position to 0-1 range
         norm_pos = position / total_length
 
