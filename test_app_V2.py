@@ -149,74 +149,134 @@ class SequenceAligner:
 
         return ''.join(aligned_seqA), ''.join(aligned_seqB)
 
-    @staticmethod
-    def align_sequences(seq1: Seq, seq2: Seq, consensus_method: str = "majority") -> AlignmentResult:
-        """Align two sequences and generate consensus."""
-        try:
-            # EMBOSS-style scoring parameters
-            aligner = PairwiseAligner()
-            aligner.match_score = 5
-            aligner.mismatch_score = -4
-            aligner.open_gap_score = -10
-            aligner.extend_gap_score = -0.5
-            aligner.mode = 'global'
-
-            # Perform alignment
-            alignments = aligner.align(seq1, seq2)
-            best_alignment = alignments[0]
-
-            # Extract aligned sequences
-            aligned_seqA, aligned_seqB = SequenceAligner._extract_alignment_strings(
-                best_alignment, str(seq1), str(seq2)
+@staticmethod
+def align_sequences(seq1: Seq, seq2: Seq, consensus_method: str = "sanger") -> AlignmentResult:
+    """Align two sequences and generate consensus."""
+    try:
+        # EMBOSS-style scoring parameters
+        aligner = PairwiseAligner()
+        aligner.match_score = 5
+        aligner.mismatch_score = -4
+        aligner.open_gap_score = -10
+        aligner.extend_gap_score = -0.5
+        aligner.mode = 'global'
+        # Perform alignment
+        alignments = aligner.align(seq1, seq2)
+        best_alignment = alignments[0]
+        # Extract aligned sequences
+        aligned_seqA, aligned_seqB = SequenceAligner._extract_alignment_strings(
+            best_alignment, str(seq1), str(seq2)
+        )
+        # Generate consensus
+        if consensus_method == "sanger":
+            consensus_chars, matches, mismatches, gaps = SequenceAligner._generate_sanger_consensus(
+                aligned_seqA, aligned_seqB
+            )
+        if consensus_method == "quality":
+            consensus_chars, matches, mismatches, gaps = SequenceAligner._generate_quality_based_consensus(
+                aligned_seqA, aligned_seqB
             )
 
-            # Generate consensus
-            consensus_chars = []
-            matches = mismatches = gaps = 0
+        consensus = Seq(''.join(consensus_chars))
+        # Calculate scores and statistics
+        max_possible_score = max(len(seq1), len(seq2)) * aligner.match_score
+        normalized_score = best_alignment.score / max_possible_score if max_possible_score > 0 else 0
+        total_positions = len(aligned_seqA)
+        stats = {
+            'matches': matches,
+            'mismatches': mismatches,
+            'gaps': gaps,
+            'identity': matches / total_positions * 100 if total_positions > 0 else 0,
+            'coverage': (total_positions - gaps) / total_positions * 100 if total_positions > 0 else 0,
+            'raw_score': best_alignment.score,
+            'max_possible_score': max_possible_score
+        }
+        return AlignmentResult(consensus, normalized_score, str(best_alignment), stats)
+    except Exception as e:
+        st.error(f"Error during alignment: {e}")
+        return AlignmentResult(Seq(""), 0.0, "", {})
 
-            for a, b in zip(aligned_seqA, aligned_seqB):
-                if a == b and a != '-':
-                    consensus_chars.append(a)
-                    matches += 1
-                elif a == '-':
-                    consensus_chars.append(b)
-                    gaps += 1
-                elif b == '-':
-                    consensus_chars.append(a)
-                    gaps += 1
-                else:
-                    # Handle mismatches
-                    if consensus_method == "majority":
-                        consensus_chars.append('N')
-                    elif consensus_method == "first":
-                        consensus_chars.append(a)
-                    else:
-                        consensus_chars.append('N')
-                    mismatches += 1
+@staticmethod
+def _generate_sanger_consensus(aligned_seqA: str, aligned_seqB: str):
+    """Generate consensus using Sanger-specific logic (trust reverse after first match)."""
+    consensus_chars = []
+    matches = mismatches = gaps = 0
+    first_match_found = False
+    
+    for a, b in zip(aligned_seqA, aligned_seqB):
+        if a == b and a != '-':
+            consensus_chars.append(a)
+            matches += 1
+            if not first_match_found:
+                first_match_found = True
+        elif a == '-':
+            consensus_chars.append(b)
+            gaps += 1
+        elif b == '-':
+            consensus_chars.append(a)
+            gaps += 1
+        else:
+            # Handle mismatches - after first match, trust reverse read (aligned_seqB)
+            if first_match_found:
+                consensus_chars.append(b)  # Trust reverse read after first match
+            else:
+                consensus_chars.append(a)  # Use forward read before first match
+            mismatches += 1
+            
+    return consensus_chars, matches, mismatches, gaps
 
-            consensus = Seq(''.join(consensus_chars))
+@staticmethod
+def _generate_quality_based_consensus(aligned_seqA: str, aligned_seqB: str):
+    """Generate consensus using quality-based approach (recommended for Sanger)."""
+    consensus_chars = []
+    matches = mismatches = gaps = 0
+    
+    for i, (a, b) in enumerate(zip(aligned_seqA, aligned_seqB)):
+        if a == b and a != '-':
+            consensus_chars.append(a)
+            matches += 1
+        elif a == '-':
+            consensus_chars.append(b)
+            gaps += 1
+        elif b == '-':
+            consensus_chars.append(a)
+            gaps += 1
+        else:
+            # Handle mismatches with quality-based logic
+            # This is a simplified version - in real implementation you'd use
+            # actual quality scores from chromatogram data
+            
+            # Simple heuristic: middle regions are generally higher quality
+            seq_length = len(aligned_seqA)
+            position_weight_A = SequenceAligner._calculate_position_quality(i, seq_length, True)  # forward
+            position_weight_B = SequenceAligner._calculate_position_quality(i, seq_length, False) # reverse
+            
+            if position_weight_A > position_weight_B:
+                consensus_chars.append(a)
+            elif position_weight_B > position_weight_A:
+                consensus_chars.append(b)
+            else:
+                consensus_chars.append('N')  # Ambiguous
+            
+            mismatches += 1
+            
+    return consensus_chars, matches, mismatches, gaps
 
-            # Calculate scores and statistics
-            max_possible_score = max(len(seq1), len(seq2)) * aligner.match_score
-            normalized_score = best_alignment.score / max_possible_score if max_possible_score > 0 else 0
-
-            total_positions = len(aligned_seqA)
-            stats = {
-                'matches': matches,
-                'mismatches': mismatches,
-                'gaps': gaps,
-                'identity': matches / total_positions * 100 if total_positions > 0 else 0,
-                'coverage': (total_positions - gaps) / total_positions * 100 if total_positions > 0 else 0,
-                'raw_score': best_alignment.score,
-                'max_possible_score': max_possible_score
-            }
-
-            return AlignmentResult(consensus, normalized_score, str(best_alignment), stats)
-
-        except Exception as e:
-            st.error(f"Error during alignment: {e}")
-            return AlignmentResult(Seq(""), 0.0, "", {})
-
+@staticmethod
+def _calculate_position_quality(position: int, total_length: int, is_forward: bool) -> float:
+    """
+    Calculate position-based quality weight for consensus.
+    This is a simplified heuristic - real implementation would use actual quality scores.
+    """
+    # Normalize position to 0-1 range
+    norm_pos = position / total_length
+    
+    if is_forward:
+        # Forward reads typically have good quality at start, degrading toward end
+        return max(0.1, 1.0 - norm_pos * 0.8)
+    else:
+        # Reverse reads typically have good quality at end, degrading toward start
+        return max(0.1, 0.2 + norm_pos * 0.8)
 
 class BlastAnalyzer:
     """Handles BLAST operations."""
@@ -437,7 +497,7 @@ class SangerAnalysisApp:
         st.sidebar.subheader("Consensus Generation")
         consensus_method = st.sidebar.selectbox(
             "Consensus Method",
-            ["majority", "first"],
+            ["sanger", "quality"],
             help="Method for handling mismatches in consensus"
         )
 
