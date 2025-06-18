@@ -616,13 +616,13 @@ class SangerAnalysisApp:
         forward_trimmed = self.trimmer.trim_by_quality(
             forward_data.sequence, forward_data.quality_scores,
             cutoff=params['quality_cutoff'], window_size=params['window_size'],
-            trim_end=params['trim_end'], warn_callback=st.warning
+            score_margin=params['score_margin'], warn_callback=st.warning
         )
 
         reverse_trimmed = self.trimmer.trim_by_quality(
             reverse_data.sequence, reverse_data.quality_scores,
             cutoff=params['quality_cutoff'], window_size=params['window_size'],
-            trim_end=params['trim_end'], warn_callback=st.warning
+           score_margin=params['score_margin'], warn_callback=st.warning
         )
 
         # Apply reverse complement to reverse sequence
