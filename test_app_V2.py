@@ -119,21 +119,22 @@ class SequenceQualityTrimmer:
                     best_mean = window_mean
                     best_start = i
 
-    # Decide which to use
-        if best_start is None:
+        # Decide which to use - FIXED LOGIC
+        if first_start is None:
         # No window passed the cutoff, return full sequence
             return TrimResult(seq, qual, 0, len(seq) - 1)
-
-    # If score_margin is 0, always use first_start
-        if score_margin == 0:
+    
+    # Fixed logic: When score_margin is 0, ALWAYS use first_start
+    # When score_margin > 0, only use best if it's better by MORE than the margin
+        if score_margin <= 0:
             start = first_start
         else:
-        # Only use best if it's significantly better than first by the margin
+            # Only use best if it's significantly better than first by MORE than the margin
             use_best = (best_start is not None and 
                        first_mean is not None and 
-                       (best_mean - first_mean) > score_margin)  # Changed >= to >
+                       (best_mean - first_mean) > score_margin)
             start = best_start if use_best else first_start
-
+        
         trimmed_seq = seq[start:]
         trimmed_qual = qual[start:]
 
