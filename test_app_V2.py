@@ -125,7 +125,7 @@ class SequenceQualityTrimmer:
             return TrimResult(seq, qual, 0, len(seq) - 1)
 
     # Fixed logic: use best if it's significantly better than first
-        use_best = first_start is not None and (best_mean - first_mean >= score_margin)
+        use_best = first_start is not None and (best_mean - first_mean > score_margin)
         start = best_start if use_best else first_start
 
         trimmed_seq = seq[start:]
@@ -507,7 +507,7 @@ class SangerAnalysisApp:
         st.sidebar.subheader("Quality Trimming")
         quality_cutoff = st.sidebar.slider("Quality Cutoff", 10, 40, 20, help="Minimum quality score threshold")
         window_size = st.sidebar.slider("Window Size", 2, 30, 10, help="Size of sliding window for quality assessment")
-        score_margin = st.sidebar.slider("Score Margin", 0.5, 5.0, 1.5, step=0.1, help="How much better the best window must be to override the first acceptable window")
+        score_margin = st.sidebar.slider("Score Margin", 0, 5, 1.5, step=0.1, help="How much better the best window must be to override the first acceptable window")
         trim_end = st.sidebar.checkbox("Trim End", False, help="Whether to trim low quality from end")
 
         # Consensus parameters
