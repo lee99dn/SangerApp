@@ -535,6 +535,7 @@ class SangerAnalysisApp:
         return {
             'quality_cutoff': quality_cutoff,
             'window_size': window_size,
+            'score_margin': score_margin,
             'trim_end': trim_end,
             'consensus_method': consensus_method,
             'run_blast': run_blast,
