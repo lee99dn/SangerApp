@@ -65,7 +65,7 @@ class SequenceQualityTrimmer:
 
     @staticmethod
     def trim_by_quality(seq: Seq, qual: List[int], cutoff: int = 20,
-                        window_size: int = 10, trim_end: bool = False,
+                        window_size: int = 10,
                         score_margin: float = 1.5,
                         warn_callback: Optional[callable] = None) -> TrimResult:
         """
@@ -515,7 +515,6 @@ class SangerAnalysisApp:
         quality_cutoff = st.sidebar.slider("Quality Cutoff", 10, 40, 20, help="Minimum quality score threshold")
         window_size = st.sidebar.slider("Window Size", 2, 30, 10, help="Size of sliding window for quality assessment")
         score_margin = st.sidebar.slider("Score Margin", 0.0, 5.0, 1.5, step=0.1, help="How much better the best window must be to override the first acceptable window")
-        trim_end = st.sidebar.checkbox("Trim End", False, help="Whether to trim low quality from end")
 
         # Consensus parameters
         st.sidebar.subheader("Consensus Generation")
@@ -536,7 +535,6 @@ class SangerAnalysisApp:
             'quality_cutoff': quality_cutoff,
             'window_size': window_size,
             'score_margin': score_margin,
-            'trim_end': trim_end,
             'consensus_method': consensus_method,
             'run_blast': run_blast,
             'blast_database': blast_database,
