@@ -125,7 +125,7 @@ class SequenceQualityTrimmer:
             return TrimResult(seq, qual, 0, len(seq) - 1)
 
     # Fixed logic: use best if it's significantly better than first
-        use_best = first_start is not None and (best_mean - first_mean > score_margin)
+        use_best = first_start is not None and (best_mean - first_mean >= score_margin)
         start = best_start if use_best else first_start
 
         trimmed_seq = seq[start:]
