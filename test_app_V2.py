@@ -66,8 +66,14 @@ class SequenceQualityTrimmer:
     @staticmethod
     def trim_by_quality(seq: Seq, qual: List[int], cutoff: int = 20,
                         window_size: int = 10, trim_end: bool = False,
+                        score_margin: float = 1.5,
                         warn_callback: Optional[callable] = None) -> TrimResult:
-        """Trim sequence based on quality scores using sliding window approach."""
+        """
+        Hybrid Sanger trimming logic:
+        - Finds the first acceptable window (sliding window style).
+        - Also finds the best-scoring window above the cutoff.
+        - If best is significantly better than first (by score_margin), use it. Else, use the first one.
+        """
 
         # Input validation
         if len(seq) != len(qual):
@@ -89,36 +95,43 @@ class SequenceQualityTrimmer:
                     warnings.warn(msg)
                 return TrimResult(seq, qual, 0, len(seq) - 1)
 
-        qual_array = np.array(qual)
+        if len(seq) != len(qual):
+            raise ValueError("Sequence and quality score lengths do not match.")
 
-        # Find start position
-        start = 0
-        for i in range(len(qual_array) - window_size + 1):
-            window_mean = np.mean(qual_array[i:i + window_size])
-            if window_mean >= cutoff:
-                start = i
-                break
-
-        # Find end position
-        end = len(qual_array) - 1
-        if trim_end:
-            for i in range(len(qual_array) - window_size, -1, -1):
-                window_end = min(i + window_size, len(qual_array))
-                window_mean = np.mean(qual_array[i:window_end])
-                if window_mean >= cutoff:
-                    end = window_end - 1
-                    break
-
-        # Check if we found any good regions
-        if start >= end:
-            msg = f"No high-quality region found with cutoff {cutoff} and window size {window_size}. Using full sequence."
-            if warn_callback:
-                warn_callback(msg)
-            else:
-                warnings.warn(msg)
+    # Handle edge cases
+        if len(seq) < window_size:
             return TrimResult(seq, qual, 0, len(seq) - 1)
 
-        return TrimResult(seq[start:end + 1], qual[start:end + 1], start, end)
+        first_start = None
+        first_mean = None
+        best_start = None
+        best_mean = -np.inf
+
+        for i in range(len(qual) - window_size + 1):
+            window = qual[i:i + window_size]
+            window_mean = np.mean(window)
+
+            if window_mean >= cutoff:
+                if first_start is None:
+                    first_start = i
+                    first_mean = window_mean
+                if window_mean > best_mean:
+                    best_mean = window_mean
+                    best_start = i
+
+    # Decide which to use
+        if best_start is None:
+        # No window passed the cutoff, return full sequence
+            return TrimResult(seq, qual, 0, len(seq) - 1)
+
+    # Fixed logic: use best if it's significantly better than first
+        use_best = first_start is not None and (best_mean - first_mean >= score_margin)
+        start = best_start if use_best else first_start
+
+        trimmed_seq = seq[start:]
+        trimmed_qual = qual[start:]
+
+        return TrimResult(trimmed_seq, trimmed_qual, start, len(seq) - 1)
 
 
 class SequenceAligner:
@@ -494,6 +507,7 @@ class SangerAnalysisApp:
         st.sidebar.subheader("Quality Trimming")
         quality_cutoff = st.sidebar.slider("Quality Cutoff", 10, 40, 20, help="Minimum quality score threshold")
         window_size = st.sidebar.slider("Window Size", 2, 30, 10, help="Size of sliding window for quality assessment")
+        score_margin = st.sidebar.slider("Score Margin", 0.5, 5.0, 1.5, step=0.1, help="How much better the best window must be to override the first acceptable window")
         trim_end = st.sidebar.checkbox("Trim End", False, help="Whether to trim low quality from end")
 
         # Consensus parameters
