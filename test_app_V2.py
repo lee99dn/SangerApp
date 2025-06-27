@@ -170,7 +170,7 @@ class SequenceAligner:
         return ''.join(aligned_seqA), ''.join(aligned_seqB)
 
     @staticmethod
-    def align_sequences(seq1: Seq, seq2: Seq, consensus_method: str = "sanger") -> AlignmentResult:
+    def align_sequences(seq1: Seq, seq2: Seq) -> AlignmentResult:
         """Align two sequences and generate consensus."""
         try:
         # EMBOSS-style scoring parameters
@@ -188,14 +188,8 @@ class SequenceAligner:
                 best_alignment, str(seq1), str(seq2)
             )
         # Generate consensus
-            if consensus_method == "sanger":
-                consensus_chars, matches, mismatches, gaps = SequenceAligner._generate_sanger_consensus(
-                    aligned_seqA, aligned_seqB
-                )
-            else:
-                consensus_chars, matches, mismatches, gaps = SequenceAligner._generate_quality_based_consensus(
-                    aligned_seqA, aligned_seqB
-                )
+            consensus_chars, matches, mismatches, gaps = SequenceAligner._generate_sanger_consensus(
+                    aligned_seqA, aligned_seqB)
 
             consensus = Seq(''.join(consensus_chars))
         # Calculate scores and statistics
@@ -516,13 +510,6 @@ class SangerAnalysisApp:
         window_size = st.sidebar.slider("Window Size", 2, 30, 10, help="Size of sliding window for quality assessment")
         score_margin = st.sidebar.slider("Score Margin", 0.0, 5.0, 1.5, step=0.1, help="How much better the best window must be to override the first acceptable window")
 
-        # Consensus parameters
-        st.sidebar.subheader("Consensus Generation")
-        consensus_method = st.sidebar.selectbox(
-            "Consensus Method",
-            ["sanger", "quality"],
-            help="Method for handling mismatches in consensus"
-        )
 
         # BLAST parameters
         st.sidebar.subheader("BLAST Analysis")
@@ -535,7 +522,6 @@ class SangerAnalysisApp:
             'quality_cutoff': quality_cutoff,
             'window_size': window_size,
             'score_margin': score_margin,
-            'consensus_method': consensus_method,
             'run_blast': run_blast,
             'blast_database': blast_database,
             'blast_program': blast_program,
@@ -679,8 +665,7 @@ class SangerAnalysisApp:
 
         if len(forward_trimmed.trimmed_seq) > 0 and len(reverse_trimmed_rc) > 0:
             alignment_result = self.aligner.align_sequences(
-                forward_trimmed.trimmed_seq, reverse_trimmed_rc,
-                consensus_method=params['consensus_method']
+                forward_trimmed.trimmed_seq, reverse_trimmed_rc
             )
 
             if len(alignment_result.consensus) > 0:
@@ -802,7 +787,6 @@ class SangerAnalysisApp:
                 'Alignment_Coverage': f"{alignment_result.stats['coverage']:.2f}%",
                 'Quality_Cutoff': params['quality_cutoff'],
                 'Window_Size': params['window_size'],
-                'Consensus_Method': params['consensus_method']
             }
             report_df = pd.DataFrame([report_data]).T
             report_csv = report_df.to_csv()
