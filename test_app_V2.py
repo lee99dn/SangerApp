@@ -240,60 +240,6 @@ class SequenceAligner:
 
         return consensus_chars, matches, mismatches, gaps
 
-
-    @staticmethod
-    def _generate_quality_based_consensus(aligned_seqA: str, aligned_seqB: str):
-        """Generate consensus using quality-based approach (recommended for Sanger)."""
-        consensus_chars = []
-        matches = mismatches = gaps = 0
-
-        for i, (a, b) in enumerate(zip(aligned_seqA, aligned_seqB)):
-            if a == b and a != '-':
-                consensus_chars.append(a)
-                matches += 1
-            elif a == '-':
-                consensus_chars.append(b)
-                gaps += 1
-            elif b == '-':
-                consensus_chars.append(a)
-                gaps += 1
-            else:
-            # Handle mismatches with quality-based logic
-            # This is a simplified version - in real implementation you'd use
-            # actual quality scores from chromatogram data
-
-            # Simple heuristic: middle regions are generally higher quality
-                seq_length = len(aligned_seqA)
-                position_weight_A = SequenceAligner._calculate_position_quality(i, seq_length, True)  # forward
-                position_weight_B = SequenceAligner._calculate_position_quality(i, seq_length, False)  # reverse
-
-                if position_weight_A > position_weight_B:
-                    consensus_chars.append(a)
-                elif position_weight_B > position_weight_A:
-                    consensus_chars.append(b)
-                else:
-                    consensus_chars.append('N')  # Ambiguous
-
-                mismatches += 1
-
-        return consensus_chars, matches, mismatches, gaps
-
-
-    @staticmethod
-    def _calculate_position_quality(position: int, total_length: int, is_forward: bool) -> float:
-        """
-        Calculate position-based quality weight for consensus.
-        This is a simplified heuristic - real implementation would use actual quality scores.
-        """
-    # Normalize position to 0-1 range
-        norm_pos = position / total_length
-
-        if is_forward:
-        # Forward reads typically have good quality at start, degrading toward end
-            return max(0.1, 1.0 - norm_pos * 0.8)
-        else:
-        # Reverse reads typically have good quality at end, degrading toward start
-            return max(0.1, 0.2 + norm_pos * 0.8)
         
 class BlastAnalyzer:
     """Handles BLAST operations."""
