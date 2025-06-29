@@ -446,13 +446,18 @@ class Visualizer:
                 ax.axvspan(end + 1, len(quality_scores) - 1, alpha=0.2, color='red',
                            label=f'Trimmed end ({end + 1}-{len(quality_scores) - 1})')
 
-        ax.set_xlabel('Position')
+        ax.set_xlabel('Position (0-based indexing)')
         ax.set_ylabel('Quality Score')
         ax.set_title(title)
         ax.grid(True, alpha=0.3)
         if trimmed_region:
             ax.legend()
-
+        # Add explanatory text
+            textstr = 'Note: Positions use 0-based indexing (computer counting)\nFor 1-based counting (human), add 1 to each position'
+            props = dict(boxstyle='round', facecolor='wheat', alpha=0.5)
+            ax.text(0.02, 0.98, textstr, transform=ax.transAxes, fontsize=8,
+                    verticalalignment='top', bbox=props)
+                                
         return fig
 
 
