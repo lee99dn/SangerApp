@@ -98,7 +98,7 @@ class SequenceQualityTrimmer:
         if len(seq) != len(qual):
             raise ValueError("Sequence and quality score lengths do not match.")
 
-    # Handle edge cases
+        # Handle edge cases
         if len(seq) < window_size:
             return TrimResult(seq, qual, 0, len(seq) - 1)
 
@@ -121,20 +121,20 @@ class SequenceQualityTrimmer:
 
         # Decide which to use - FIXED LOGIC
         if first_start is None:
-        # No window passed the cutoff, return full sequence
+            # No window passed the cutoff, return full sequence
             return TrimResult(seq, qual, 0, len(seq) - 1)
-    
-    # Fixed logic: When score_margin is 0, ALWAYS use first_start
-    # When score_margin > 0, only use best if it's better by MORE than the margin
+
+        # Fixed logic: When score_margin is 0, ALWAYS use first_start
+        # When score_margin > 0, only use best if it's better by MORE than the margin
         if score_margin <= 0:
             start = first_start
         else:
             # Only use best if it's significantly better than first by MORE than the margin
-            use_best = (best_start is not None and 
-                       first_mean is not None and 
-                       (best_mean - first_mean) > score_margin)
+            use_best = (best_start is not None and
+                        first_mean is not None and
+                        (best_mean - first_mean) > score_margin)
             start = best_start if use_best else first_start
-        
+
         trimmed_seq = seq[start:]
         trimmed_qual = qual[start:]
 
@@ -142,17 +142,21 @@ class SequenceQualityTrimmer:
 
 
 class SequenceAligner:
-    """Handles sequence alignment operations."""
+    """Handles sequence alignment and consensus generation."""
+
+    @staticmethod
+    def reverse_complement(seq: Seq) -> Seq:
+        """Return the reverse complement of a DNA sequence."""
+        return seq.reverse_complement()
 
     @staticmethod
     def _extract_alignment_strings(alignment, seq1: str, seq2: str) -> Tuple[str, str]:
-        """Extract aligned strings from BioPython alignment object."""
+        """Extract aligned strings from BioPython alignment object, including trailing ends."""
         aligned_seqA = []
         aligned_seqB = []
 
         last1 = last2 = 0
         for (start1, end1), (start2, end2) in zip(alignment.aligned[0], alignment.aligned[1]):
-            # Add gaps for unaligned regions
             if start1 > last1:
                 aligned_seqA.append(seq1[last1:start1])
                 aligned_seqB.append('-' * (start1 - last1))
@@ -160,87 +164,120 @@ class SequenceAligner:
                 aligned_seqA.append('-' * (start2 - last2))
                 aligned_seqB.append(seq2[last2:start2])
 
-            # Add aligned region
             aligned_seqA.append(seq1[start1:end1])
             aligned_seqB.append(seq2[start2:end2])
 
             last1 = end1
             last2 = end2
 
+        tail1 = seq1[last1:]
+        tail2 = seq2[last2:]
+        if len(tail1) > len(tail2):
+            tail2 += '-' * (len(tail1) - len(tail2))
+        elif len(tail2) > len(tail1):
+            tail1 += '-' * (len(tail2) - len(tail1))
+
+        aligned_seqA.append(tail1)
+        aligned_seqB.append(tail2)
+
         return ''.join(aligned_seqA), ''.join(aligned_seqB)
 
     @staticmethod
-    def align_sequences(seq1: Seq, seq2: Seq) -> AlignmentResult:
-        """Align two sequences and generate consensus."""
-        try:
-        # EMBOSS-style scoring parameters
-            aligner = PairwiseAligner()
-            aligner.match_score = 5
-            aligner.mismatch_score = -4
-            aligner.open_gap_score = -10
-            aligner.extend_gap_score = -0.5
-            aligner.mode = 'global'
-        # Perform alignment
-            alignments = aligner.align(seq1, seq2)
-            best_alignment = alignments[0]
-        # Extract aligned sequences
-            aligned_seqA, aligned_seqB = SequenceAligner._extract_alignment_strings(
-                best_alignment, str(seq1), str(seq2)
-            )
-        # Generate consensus
-            consensus_chars, matches, mismatches, gaps = SequenceAligner._generate_sanger_consensus(
-                    aligned_seqA, aligned_seqB)
-
-            consensus = Seq(''.join(consensus_chars))
-        # Calculate scores and statistics
-            max_possible_score = max(len(seq1), len(seq2)) * aligner.match_score
-            normalized_score = best_alignment.score / max_possible_score if max_possible_score > 0 else 0
-            total_positions = len(aligned_seqA)
-            stats = {
-                'matches': matches,
-                'mismatches': mismatches,
-                'gaps': gaps,
-                'identity': matches / total_positions * 100 if total_positions > 0 else 0,
-                'coverage': (total_positions - gaps) / total_positions * 100 if total_positions > 0 else 0,
-                'raw_score': best_alignment.score,
-                'max_possible_score': max_possible_score
-            }
-            return AlignmentResult(consensus, normalized_score, str(best_alignment), stats)
-        except Exception as e:
-            st.error(f"Error during alignment: {e}")
-            return AlignmentResult(Seq(""), 0.0, "", {})
-
+    def _align_quality_to_gapped(aligned_seq: str, raw_qual: List[int]) -> List[int]:
+        """Align quality scores to gapped sequences."""
+        aligned_qual = []
+        q_index = 0
+        for base in aligned_seq:
+            if base == '-':
+                aligned_qual.append(0)
+            else:
+                aligned_qual.append(raw_qual[q_index])
+                q_index += 1
+        return aligned_qual
 
     @staticmethod
-    def _generate_sanger_consensus(aligned_seqA: str, aligned_seqB: str):
-        """Generate consensus using Sanger-specific logic (trust reverse after first match)."""
-        consensus_chars = []
+    def _generate_consensus_by_quality(aligned_f: str, aligned_r: str,
+                                       qual_f: List[int], qual_r: List[int]) -> Tuple[List[str], int, int, int]:
+        """Generate consensus trusting forward in first half, reverse in second half."""
+        consensus = []
         matches = mismatches = gaps = 0
-        first_match_found = False
+        length = len(aligned_f)
 
-        for a, b in zip(aligned_seqA, aligned_seqB):
-            if a == b and a != '-':
-                consensus_chars.append(a)
-                matches += 1
-                if not first_match_found:
-                    first_match_found = True
+        for i in range(length):
+            a, b = aligned_f[i], aligned_r[i]
+            qf, qr = qual_f[i], qual_r[i]
+
+            if a == b:
+                consensus.append(a)
+                if a != '-':
+                    matches += 1
             elif a == '-':
-                consensus_chars.append(b)
+                consensus.append(b)
                 gaps += 1
             elif b == '-':
-                consensus_chars.append(a)
+                consensus.append(a)
                 gaps += 1
             else:
-            # Handle mismatches - after first match, trust reverse read (aligned_seqB)
-                if first_match_found:
-                    consensus_chars.append(b)  # Trust reverse read after first match
+                # Mismatch case: choose higher quality
+                if qf > qr:
+                    consensus.append(a)
+                elif qr > qf:
+                    consensus.append(b)
                 else:
-                    consensus_chars.append(a)  # Use forward read before first match
+                    consensus.append(a if i < length // 2 else b)
                 mismatches += 1
+        return consensus, matches, mismatches, gaps
 
-        return consensus_chars, matches, mismatches, gaps
+    @staticmethod
+    def align_sequences(seq1: Seq, seq2: Seq,
+                        qual1: Optional[List[int]] = None,
+                        qual2: Optional[List[int]] = None) -> AlignmentResult:
+        """Align two sequences and generate consensus with quality-based logic."""
+        aligner = PairwiseAligner()
+        aligner.mode = 'global'
+        aligner.match_score = 1
+        aligner.mismatch_score = -1
+        aligner.open_gap_score = -5
+        aligner.extend_gap_score = -0.5
+        aligner.query_end_gap_score = 0.0
+        aligner.target_end_gap_score = 0.0
 
-        
+        alignment = aligner.align(seq1, seq2)[0]
+        aligned_f, aligned_r = SequenceAligner._extract_alignment_strings(alignment, str(seq1), str(seq2))
+
+        # Align qualities to gapped sequences
+        aligned_qf = SequenceAligner._align_quality_to_gapped(aligned_f, qual1)
+        aligned_qr = SequenceAligner._align_quality_to_gapped(aligned_r, qual2)
+
+        # Generate consensus
+        consensus_chars, matches, mismatches, gaps = SequenceAligner._generate_consensus_by_quality(
+            aligned_f, aligned_r, aligned_qf, aligned_qr
+        )
+        consensus_seq = Seq(''.join(consensus_chars))
+
+        # Compute stats
+        total_positions = len(aligned_f)
+        max_score = max(len(seq1), len(seq2)) * aligner.match_score
+        stats = {
+            'matches': matches,
+            'mismatches': mismatches,
+            'gaps': gaps,
+            'identity': matches / total_positions * 100 if total_positions > 0 else 0,
+            'coverage': (total_positions - gaps) / total_positions * 100 if total_positions > 0 else 0,
+            'raw_score': alignment.score,
+            'max_possible_score': max_score
+        }
+
+        return AlignmentResult(
+            consensus=consensus_seq,
+            score=alignment.score / max_score if max_score > 0 else 0,
+            alignment_string=str(alignment),
+            stats=stats
+        )
+
+
+
+
 class BlastAnalyzer:
     """Handles BLAST operations."""
 
@@ -454,13 +491,14 @@ class SangerAnalysisApp:
         st.sidebar.subheader("Quality Trimming")
         quality_cutoff = st.sidebar.slider("Quality Cutoff", 10, 40, 20, help="Minimum quality score threshold")
         window_size = st.sidebar.slider("Window Size", 2, 30, 10, help="Size of sliding window for quality assessment")
-        score_margin = st.sidebar.slider("Score Margin", 0.0, 5.0, 1.5, step=0.1, help="How much better the best window must be to override the first acceptable window")
-
+        score_margin = st.sidebar.slider("Score Margin", 0.0, 5.0, 1.5, step=0.1,
+                                         help="How much better the best window must be to override the first acceptable window")
 
         # BLAST parameters
         st.sidebar.subheader("BLAST Analysis")
         run_blast = st.sidebar.checkbox("Run BLAST Analysis", False, help="Perform BLAST search on consensus sequence")
-        blast_database = st.sidebar.selectbox("BLAST Database", ["nt", "nr", "16S ribosomal RNA"], help="NCBI database to search")
+        blast_database = st.sidebar.selectbox("BLAST Database", ["nt", "nr", "16S ribosomal RNA"],
+                                              help="NCBI database to search")
         blast_program = st.sidebar.selectbox("BLAST Program", ["blastn", "blastx"], help="BLAST program to use")
         max_hits = st.sidebar.slider("Max BLAST Hits", 5, 500, 10, help="Maximum number of BLAST hits to retrieve")
 
@@ -554,11 +592,11 @@ class SangerAnalysisApp:
         reverse_trimmed = self.trimmer.trim_by_quality(
             reverse_data.sequence, reverse_data.quality_scores,
             cutoff=params['quality_cutoff'], window_size=params['window_size'],
-           score_margin=params['score_margin'], warn_callback=st.warning
+            score_margin=params['score_margin'], warn_callback=st.warning
         )
 
         # Apply reverse complement to reverse sequence
-        reverse_trimmed_rc = reverse_trimmed.trimmed_seq.reverse_complement()
+        reverse_trimmed_rc = SequenceAligner.reverse_complement(reverse_trimmed.trimmed_seq)
 
         # Display results
         col1, col2 = st.columns(2)
@@ -604,54 +642,62 @@ class SangerAnalysisApp:
 
         return forward_trimmed, reverse_trimmed, reverse_trimmed_rc
 
-    def generate_consensus(self, forward_trimmed: TrimResult, reverse_trimmed_rc: Seq,
+    def generate_consensus(self, forward_trimmed: TrimResult, reverse_trimmed: TrimResult,
                            params: Dict[str, Any]) -> Optional[AlignmentResult]:
-        """Generate consensus sequence."""
+        """Generate consensus sequence using forward and reverse (rev-comp) trimmed reads."""
         st.header("🔗 Consensus Generation")
 
-        if len(forward_trimmed.trimmed_seq) > 0 and len(reverse_trimmed_rc) > 0:
-            alignment_result = self.aligner.align_sequences(
-                forward_trimmed.trimmed_seq, reverse_trimmed_rc
-            )
-
-            if len(alignment_result.consensus) > 0:
-                # Display results
-                col1, col2 = st.columns([2, 1])
-
-                with col1:
-                    st.subheader("Consensus Sequence")
-                    st.text_area(
-                        "Consensus (FASTA format)",
-                        f">Consensus_Sequence_{datetime.now().strftime('%Y%m%d_%H%M%S')}\n{alignment_result.consensus}",
-                        height=150
-                    )
-
-                    consensus_stats = self.analyzer.calculate_stats(alignment_result.consensus)
-                    st.subheader("Consensus Statistics")
-                    st.dataframe(pd.DataFrame([consensus_stats]).T)
-
-                with col2:
-                    st.subheader("Alignment Statistics")
-                    alignment_data = {
-                        'Metric': ['Matches', 'Mismatches', 'Gaps', 'Identity (%)', 'Coverage (%)', 'Alignment Score'],
-                        'Value': [
-                            alignment_result.stats['matches'],
-                            alignment_result.stats['mismatches'],
-                            alignment_result.stats['gaps'],
-                            f"{alignment_result.stats['identity']:.2f}%",
-                            f"{alignment_result.stats['coverage']:.2f}%",
-                            f"{alignment_result.score:.3f}"
-                        ]
-                    }
-                    st.dataframe(pd.DataFrame(alignment_data), hide_index=True)
-
-                return alignment_result
-            else:
-                st.error("Failed to generate consensus sequence")
-                return None
-        else:
+        if len(forward_trimmed.trimmed_seq) == 0 or len(reverse_trimmed.trimmed_seq) == 0:
             st.error("Trimmed sequences are too short for consensus generation")
             return None
+
+        # Reverse complement the reverse read
+        reverse_trimmed_rc = SequenceAligner.reverse_complement(reverse_trimmed.trimmed_seq)
+        reverse_qual_rc = reverse_trimmed.trimmed_qual[::-1]  # Reverse Phred scores
+
+        # Align and generate consensus using quality-based approach
+        alignment_result = self.aligner.align_sequences(
+            forward_trimmed.trimmed_seq,
+            reverse_trimmed_rc,
+            qual1=forward_trimmed.trimmed_qual,
+            qual2=reverse_qual_rc
+        )
+
+        if len(alignment_result.consensus) == 0:
+            st.error("Failed to generate consensus sequence")
+            return None
+
+        # Display results
+        col1, col2 = st.columns([2, 1])
+
+        with col1:
+            st.subheader("Consensus Sequence")
+            st.text_area(
+                "Consensus (FASTA format)",
+                f">Consensus_Sequence_{datetime.now().strftime('%Y%m%d_%H%M%S')}\n{alignment_result.consensus}",
+                height=150
+            )
+
+            consensus_stats = self.analyzer.calculate_stats(alignment_result.consensus)
+            st.subheader("Consensus Statistics")
+            st.dataframe(pd.DataFrame([consensus_stats]).T)
+
+        with col2:
+            st.subheader("Alignment Statistics")
+            alignment_data = {
+                'Metric': ['Matches', 'Mismatches', 'Gaps', 'Identity (%)', 'Coverage (%)', 'Alignment Score'],
+                'Value': [
+                    alignment_result.stats['matches'],
+                    alignment_result.stats['mismatches'],
+                    alignment_result.stats['gaps'],
+                    f"{alignment_result.stats['identity']:.2f}%",
+                    f"{alignment_result.stats['coverage']:.2f}%",
+                    f"{alignment_result.score:.3f}"
+                ]
+            }
+            st.dataframe(pd.DataFrame(alignment_data), hide_index=True)
+
+        return alignment_result
 
     def run_blast_analysis(self, consensus: Seq, params: Dict[str, Any]) -> Optional[pd.DataFrame]:
         """Run BLAST analysis on consensus sequence."""
@@ -792,7 +838,7 @@ class SangerAnalysisApp:
                 )
 
                 # Generate consensus
-                alignment_result = self.generate_consensus(forward_trimmed, reverse_trimmed_rc, params)
+                alignment_result = self.generate_consensus(forward_trimmed, reverse_trimmed, params)
 
                 if alignment_result:
                     # Run BLAST analysis if requested
