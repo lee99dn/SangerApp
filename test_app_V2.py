@@ -638,9 +638,11 @@ class SangerAnalysisApp:
 
         col1, col2 = st.columns(2)
         with col1:
+            st.text("Forward Trimmed:")
+            st.code(str(forward_trimmed.trimmed_seq)[:100] + ("..." if len(forward_trimmed.trimmed_seq) > 100 else ""))
+        with col2:
             st.text("Reverse Trimmed (Original):")
             st.code(str(reverse_trimmed.trimmed_seq)[:100] + ("..." if len(reverse_trimmed.trimmed_seq) > 100 else ""))
-        with col2:
             st.text("Reverse Trimmed (Reverse Complement):")
             st.code(str(reverse_trimmed_rc)[:100] + ("..." if len(reverse_trimmed_rc) > 100 else ""))
 
