@@ -556,9 +556,11 @@ class SangerAnalysisApp:
         st.header("📊 Raw Sequence Information")
 
         col1, col2 = st.columns(2)
-
+            
         with col1:
             st.subheader("Forward Read")
+            st.text("Forward Read (Original):")
+            st.code(str(forward_data.sequence)[:100] + ("..." if len(forward_data.sequence) > 100 else ""))
             forward_stats = self.analyzer.calculate_stats(forward_data.sequence, forward_data.quality_scores)
             st.dataframe(pd.DataFrame([forward_stats]).T)
 
@@ -569,6 +571,8 @@ class SangerAnalysisApp:
 
         with col2:
             st.subheader("Reverse Read (Original)")
+            st.text("Reverse Read (Original):")
+            st.code(str(reverse_data.sequence)[:100] + ("..." if len(reverse_data.sequence) > 100 else ""))
             reverse_stats = self.analyzer.calculate_stats(reverse_data.sequence, reverse_data.quality_scores)
             st.dataframe(pd.DataFrame([reverse_stats]).T)
 
