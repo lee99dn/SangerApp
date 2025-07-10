@@ -1,4 +1,4 @@
-# 🔬 Sanger Consensus App
+# 🔬 Sanger Assembly App
 
 A lightweight, Python-based Streamlit web application for generating high-quality consensus sequences from paired-end Sanger `.ab1` chromatogram files.
 
