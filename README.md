@@ -15,6 +15,7 @@ Designed for use in molecular biology, diagnostics, and teaching labs.
   Quality Cutoff: 20 (Minimum phred score threshold)
   Window Size: 10 (Size of sliding window for quality assessment)
   Score Margin: 1.5 (How much better must the Best Window be to override the First Acceptable Window? If the score margin is 0, select the First Acceptable Window.)
+  
   <img width="475" height="574" alt="image" src="https://github.com/user-attachments/assets/727d5460-36fa-44b8-aa01-5240f01a7d39" />
 - 🔁 Reverse complement + reverse Phred score handling
 - 🧩 Overlap alignment using Clustal-style scoring
