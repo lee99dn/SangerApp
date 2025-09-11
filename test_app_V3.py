@@ -60,6 +60,8 @@ class BlastHit:
     identity: float
     coverage: float
     alignment_length: int
+    query_length: int
+    subject_length: int
 
 
 class SequenceQualityTrimmer:
@@ -259,11 +261,10 @@ class SequenceAligner:
         consensus_seq = Seq(''.join(consensus_chars))
 
         # Compute stats
-        total_positions = len(aligned_f)
         stats = {
             'matches': matches,
             'mismatches': mismatches,
-            'gaps': gaps
+            'gaps': gaps,
         }
 
         return AlignmentResult(
@@ -306,7 +307,6 @@ class BlastAnalyzer:
 
             hits = []
             for alignment in blast_record.alignments:
-                #best_hsp = max(alignment.hsps, key=lambda h: h.score)
 
                 hit = BlastHit(
                     accession=alignment.accession,
@@ -314,9 +314,11 @@ class BlastAnalyzer:
                     scientific_name=extract_organism_from_blast_title(alignment.title),
                     score=alignment.hsps[0].score,
                     e_value=alignment.hsps[0].expect,
-                    identity=(alignment.hsps[0].identities / alignment.hsps[0].align_length) * 100,
-                    coverage=(alignment.hsps[0].align_length / len(sequence)) * 100,
-                    alignment_length=alignment.hsps[0].align_length
+                    identity=round((alignment.hsps[0].identities / alignment.hsps[0].align_length) * 100, 2),
+                    coverage=round((alignment.hsps[0].align_length / len(sequence)) * 100, 2) if alignment.hsps[0].align_length < len(sequence) else 100.00,
+                    alignment_length=alignment.hsps[0].align_length,
+                    query_length=len(str(sequence)),
+                    subject_length=int(alignment.length)
                 )
                 hits.append(hit)
 
@@ -350,11 +352,13 @@ class BlastAnalyzer:
                 'Accession': hit.accession,
                 'Description': hit.description,
                 'Scientific_name': hit.scientific_name,
-                'Score': f"{hit.score:.1f}",
+                'Score': f"{hit.score:.2f}",
                 'E-value': f"{hit.e_value:.2e}",
-                'Identity (%)': f"{hit.identity:.1f}",
-                'Coverage (%)': f"{hit.coverage:.1f}",
-                'Alignment Length': hit.alignment_length
+                'Identity (%)': f"{hit.identity:.2f}",
+                'Coverage (%)': f"{hit.coverage:.2f}",
+                'Alignment Length': hit.alignment_length,
+                'Query Length': hit.query_length,
+                'Subject Length': hit.subject_length
             })
 
         df = pd.DataFrame(hit_data)
