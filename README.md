@@ -24,7 +24,7 @@ Designed for use in molecular biology, diagnostics, and teaching labs.
 - 📊 Output stats
   |   Metric  | Value |
   | --------- | ----- |
-  |:Matches:  |  :277:|
+  |Matches |  277|
   |Mismatches|  12|
   |Gaps|  983|
   |Alignment Score|  227.5|
