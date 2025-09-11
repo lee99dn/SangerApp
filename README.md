@@ -22,7 +22,7 @@ Designed for use in molecular biology, diagnostics, and teaching labs.
 - 🧩 Overlap alignment
   <img width="1384" height="772" alt="image" src="https://github.com/user-attachments/assets/67a26a61-6645-4c57-bb95-c121f34e248d" />
 - 📊 Output stats
-  |Metric|  Value|
+  |Metric|Value|
   |Matches|  277|
   |Mismatches|  12|
   |Gaps|  983|
