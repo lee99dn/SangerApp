@@ -18,8 +18,9 @@ Designed for use in molecular biology, diagnostics, and teaching labs.
   
   <img width="475" height="574" alt="image" src="https://github.com/user-attachments/assets/727d5460-36fa-44b8-aa01-5240f01a7d39" />
 - 🔁 Reverse complement + reverse Phred score handling
-- 🧩 Overlap alignment using Clustal-style scoring
-- 🧠 Quality-aware consensus: trust forward in first half, reverse in second
+  <img width="1202" height="545" alt="image" src="https://github.com/user-attachments/assets/35dfe479-0a69-47d1-89c2-8d9266e9af70" />
+- 🧩 Overlap alignment
+  <img width="1384" height="772" alt="image" src="https://github.com/user-attachments/assets/67a26a61-6645-4c57-bb95-c121f34e248d" />
 - 📊 Output stats: identity, coverage, mismatches, alignment score
 - 💾 Export to FASTA, CSV, and optional BLAST-ready format
 - 🌐 Web interface (Streamlit) — runs locally or on Streamlit Cloud
