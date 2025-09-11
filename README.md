@@ -1,4 +1,4 @@
-# 🔬 Sanger Assembly App
+<img width="97" height="30" alt="image" src="https://github.com/user-attachments/assets/24ecdcc2-9554-43df-afdf-efdd114ddf1e" /># 🔬 Sanger Assembly App
 
 A lightweight, Python-based Streamlit web application for generating high-quality consensus sequences from paired-end Sanger `.ab1` chromatogram files.
 
@@ -22,9 +22,9 @@ Designed for use in molecular biology, diagnostics, and teaching labs.
 - 🧩 Overlap alignment
   <img width="1384" height="772" alt="image" src="https://github.com/user-attachments/assets/67a26a61-6645-4c57-bb95-c121f34e248d" />
 - 📊 Output stats
-  |Metric|Value|
-  --------------
-  |Matches|  277|
+  |   Metric  | Value |
+  | --------- | ----- |
+  |:Matches:  |  :277:|
   |Mismatches|  12|
   |Gaps|  983|
   |Alignment Score|  227.5|
