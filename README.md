@@ -23,6 +23,7 @@ Designed for use in molecular biology, diagnostics, and teaching labs.
   <img width="1384" height="772" alt="image" src="https://github.com/user-attachments/assets/67a26a61-6645-4c57-bb95-c121f34e248d" />
 - 📊 Output stats
   |Metric|Value|
+  --------------
   |Matches|  277|
   |Mismatches|  12|
   |Gaps|  983|
