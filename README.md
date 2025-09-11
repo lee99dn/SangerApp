@@ -22,15 +22,15 @@ Designed for use in molecular biology, diagnostics, and teaching labs.
 - 🧩 Overlap alignment
   <img width="1384" height="772" alt="image" src="https://github.com/user-attachments/assets/67a26a61-6645-4c57-bb95-c121f34e248d" />
 - 📊 Output stats
-  Metric  Value
-  Matches  277
-  Mismatches  12
-  Gaps  983
-  Alignment Score  227.5
-  Consensus_Length  1272
-  Quality_Cutoff  20
-  Window_Size  10
-  Score_Margin  1.5
+  |Metric|  Value|
+  |Matches|  277|
+  |Mismatches|  12|
+  |Gaps|  983|
+  |Alignment Score|  227.5|
+  |Consensus_Length|  1272|
+  |Quality_Cutoff|  20|
+  |Window_Size|  10|
+  |Score_Margin|  1.5|
 
 - 💾 Export to FASTA, CSV, and optional BLAST-ready format
 - 🌐 Web interface (Streamlit) — runs locally or on Streamlit Cloud
