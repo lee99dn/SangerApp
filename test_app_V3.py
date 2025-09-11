@@ -8,6 +8,7 @@ import warnings
 from datetime import datetime
 import time
 from dataclasses import dataclass
+import re
 
 # BioPython imports with error handling
 try:
@@ -53,6 +54,7 @@ class BlastHit:
     """Data class to hold BLAST hit information."""
     accession: str
     description: str
+    scientific_name: str
     score: float
     e_value: float
     identity: float
@@ -258,20 +260,15 @@ class SequenceAligner:
 
         # Compute stats
         total_positions = len(aligned_f)
-        max_score = max(len(seq1), len(seq2)) * aligner.match_score
         stats = {
             'matches': matches,
             'mismatches': mismatches,
-            'gaps': gaps,
-            'identity': matches / total_positions * 100 if total_positions > 0 else 0,
-            'coverage': (total_positions - gaps) / total_positions * 100 if total_positions > 0 else 0,
-            'raw_score': alignment.score,
-            'max_possible_score': max_score
+            'gaps': gaps
         }
 
         return AlignmentResult(
             consensus=consensus_seq,
-            score=alignment.score / max_score if max_score > 0 else 0,
+            score=alignment.score,
             alignment_string=str(alignment),
             stats=stats
         )
@@ -299,7 +296,7 @@ class BlastAnalyzer:
                 database=database,
                 sequence=str(sequence),
                 hitlist_size=max_hits,
-                expect=10,
+                expect=0.000001 if program == "blastn" else 10,
                 word_size=11 if program == "blastn" else 3
             )
 
@@ -309,16 +306,17 @@ class BlastAnalyzer:
 
             hits = []
             for alignment in blast_record.alignments:
-                best_hsp = max(alignment.hsps, key=lambda h: h.score)
+                #best_hsp = max(alignment.hsps, key=lambda h: h.score)
 
                 hit = BlastHit(
                     accession=alignment.accession,
                     description=alignment.title[:100] + "..." if len(alignment.title) > 100 else alignment.title,
-                    score=best_hsp.score,
-                    e_value=best_hsp.expect,
-                    identity=(best_hsp.identities / best_hsp.align_length) * 100,
-                    coverage=(best_hsp.align_length / len(sequence)) * 100,
-                    alignment_length=best_hsp.align_length
+                    scientific_name=extract_organism_from_blast_title(alignment.title),
+                    score=alignment.hsps[0].score,
+                    e_value=alignment.hsps[0].expect,
+                    identity=(alignment.hsps[0].identities / alignment.hsps[0].align_length) * 100,
+                    coverage=(alignment.hsps[0].align_length / len(sequence)) * 100,
+                    alignment_length=alignment.hsps[0].align_length
                 )
                 hits.append(hit)
 
@@ -351,6 +349,7 @@ class BlastAnalyzer:
                 'Rank': i,
                 'Accession': hit.accession,
                 'Description': hit.description,
+                'Scientific_name': hit.scientific_name,
                 'Score': f"{hit.score:.1f}",
                 'E-value': f"{hit.e_value:.2e}",
                 'Identity (%)': f"{hit.identity:.1f}",
@@ -370,6 +369,60 @@ class BlastAnalyzer:
                 f"🎯 Best match: {best_hit.description} (Identity: {best_hit.identity:.1f}%, E-value: {best_hit.e_value:.2e})")
 
         return df
+
+
+def extract_organism_from_blast_title(title):
+    """
+    Extract organism name from various BLAST XML title formats
+
+    Handles formats like:
+    - gi|123|gb|ABC123.1| Organism name 16S ribosomal RNA gene, partial sequence
+    - gb|ABC123.1| Organism name 16S ribosomal RNA gene, partial sequence
+    - ABC123.1 Organism name 16S ribosomal RNA gene, partial sequence
+    """
+
+    # Remove leading/trailing whitespace
+    title = title.strip()
+
+    # Handle pipe-separated formats (gi|123|gb|ABC123.1| ...)
+    if '|' in title:
+        parts = title.split('|')
+        if len(parts) >= 4:
+            # Standard format: gi|123|gb|ABC123.1| Organism description
+            description = parts[4].strip() if len(parts) > 4 else parts[-1].strip()
+        else:
+            # Simple format: gb|ABC123.1| Organism description
+            description = parts[-1].strip()
+    else:
+        # No pipes - format: ABC123.1 Organism description
+        # Split on first space after accession
+        match = re.match(r'^(\S+)\s+(.+)', title)
+        if match:
+            description = match.group(2).strip()
+        else:
+            description = title
+
+    # Remove common gene/sequence descriptions
+    patterns_to_remove = [
+        r'\s+16S\s+ribosomal\s+RNA.*$',
+        r'\s+16S\s+rRNA.*$',
+        r'\s+ribosomal\s+RNA.*$',
+        r'\s+rRNA.*$',
+        r',?\s+complete\s+sequence.*$',
+        r',?\s+partial\s+sequence.*$',
+        r',?\s+complete\s+genome.*$',
+        r',?\s+chromosome.*$',
+        r',?\s+plasmid.*$',
+        r'\s+gene.*$'
+    ]
+
+    organism_name = description
+    for pattern in patterns_to_remove:
+        organism_name = re.sub(pattern, '', organism_name, flags=re.IGNORECASE)
+        if organism_name != description:  # If we found a match, stop
+            break
+
+    return organism_name.strip()
 
 
 class FileHandler:
@@ -401,23 +454,27 @@ class SequenceAnalyzer:
         """Calculate sequence statistics."""
         seq_str = str(seq)
         stats = {
-            'Length': len(seq_str),
-            'A': seq_str.count('A'),
-            'T': seq_str.count('T'),
-            'G': seq_str.count('G'),
-            'C': seq_str.count('C'),
-            'N': seq_str.count('N'),
-            'GC Content (%)': round((seq_str.count('G') + seq_str.count('C')) / len(seq_str) * 100, 2) if len(
-                seq_str) > 0 else 0
+            'Metric': ['Length', 'A', 'T', 'G', 'C', 'N', 'GC Content (%)'],
+            'Value': [
+                len(seq_str),
+                seq_str.count('A'),
+                seq_str.count('T'),
+                seq_str.count('G'),
+                seq_str.count('C'),
+                seq_str.count('N'),
+                round((seq_str.count('G') + seq_str.count('C')) / len(seq_str) * 100, 2) if len(
+                    seq_str) > 0 else 0
+                ]
         }
 
         if qual:
-            stats.update({
-                'Min Quality': min(qual),
-                'Max Quality': max(qual),
-                'Mean Quality': round(np.mean(qual), 2),
-                'Median Quality': round(np.median(qual), 2)
-            })
+            stats['Metric'].extend(['Min Quality', 'Max Quality', 'Mean Quality', 'Median Quality'])
+            stats['Value'].extend([
+                min(qual),
+                max(qual),
+                round(np.mean(qual), 2),
+                round(np.median(qual), 2)
+            ])
 
         return stats
 
@@ -501,7 +558,7 @@ class SangerAnalysisApp:
         # BLAST parameters
         st.sidebar.subheader("BLAST Analysis")
         run_blast = st.sidebar.checkbox("Run BLAST Analysis", False, help="Perform BLAST search on consensus sequence")
-        blast_database = st.sidebar.selectbox("BLAST Database", ["nt", "nr", "16S ribosomal RNA"],
+        blast_database = st.sidebar.selectbox("BLAST Database", ["nt", "nr", "Bacteria and Archaea"],
                                               help="NCBI database to search")
         blast_program = st.sidebar.selectbox("BLAST Program", ["blastn", "blastx"], help="BLAST program to use")
         max_hits = st.sidebar.slider("Max BLAST Hits", 5, 500, 10, help="Maximum number of BLAST hits to retrieve")
@@ -566,7 +623,7 @@ class SangerAnalysisApp:
             st.text("Forward Read (Original):")
             st.code(str(forward_data.sequence)[:100] + ("..." if len(forward_data.sequence) > 100 else ""))
             forward_stats = self.analyzer.calculate_stats(forward_data.sequence, forward_data.quality_scores)
-            st.dataframe(pd.DataFrame([forward_stats]).T)
+            st.dataframe(pd.DataFrame(forward_stats), hide_index=True)
 
             fig_forward = self.visualizer.plot_quality_scores(forward_data.quality_scores,
                                                               "Forward Read Quality Scores")
@@ -578,7 +635,7 @@ class SangerAnalysisApp:
             st.text("Reverse Read (Original):")
             st.code(str(reverse_data.sequence)[:100] + ("..." if len(reverse_data.sequence) > 100 else ""))
             reverse_stats = self.analyzer.calculate_stats(reverse_data.sequence, reverse_data.quality_scores)
-            st.dataframe(pd.DataFrame([reverse_stats]).T)
+            st.dataframe(pd.DataFrame(reverse_stats), hide_index=True)
 
             fig_reverse = self.visualizer.plot_quality_scores(reverse_data.quality_scores,
                                                               "Reverse Read Quality Scores (Original)")
@@ -611,7 +668,7 @@ class SangerAnalysisApp:
         with col1:
             st.subheader("Forward Read - Trimmed")
             forward_stats = self.analyzer.calculate_stats(forward_trimmed.trimmed_seq, forward_trimmed.trimmed_qual)
-            st.dataframe(pd.DataFrame([forward_stats]).T)
+            st.dataframe(pd.DataFrame(forward_stats), hide_index=True)
 
             fig_forward_trim = self.visualizer.plot_quality_scores(
                 forward_data.quality_scores,
@@ -624,7 +681,7 @@ class SangerAnalysisApp:
         with col2:
             st.subheader("Reverse Read - Trimmed (Original orientation)")
             reverse_stats = self.analyzer.calculate_stats(reverse_trimmed.trimmed_seq, reverse_trimmed.trimmed_qual)
-            st.dataframe(pd.DataFrame([reverse_stats]).T)
+            st.dataframe(pd.DataFrame(reverse_stats), hide_index=True)
 
             fig_reverse_trim = self.visualizer.plot_quality_scores(
                 reverse_data.quality_scores,
@@ -637,7 +694,7 @@ class SangerAnalysisApp:
         # Show reverse complement
         st.subheader("🔄 Reverse Read After Reverse Complement")
         st.info(
-            "This is the reverse-complemented and trimmed reverse sequence that will be used for consensus generation.")
+            "This is the reverse-complemented and trimmed reverse sequence that will be used for s generation.")
 
         col1, col2 = st.columns(2)
         with col1:
@@ -686,19 +743,17 @@ class SangerAnalysisApp:
 
             consensus_stats = self.analyzer.calculate_stats(alignment_result.consensus)
             st.subheader("Consensus Statistics")
-            st.dataframe(pd.DataFrame([consensus_stats]).T)
+            st.dataframe(pd.DataFrame(consensus_stats), hide_index=True)
 
         with col2:
             st.subheader("Alignment Statistics")
             alignment_data = {
-                'Metric': ['Matches', 'Mismatches', 'Gaps', 'Identity (%)', 'Coverage (%)', 'Alignment Score'],
+                'Metric': ['Matches', 'Mismatches', 'Gaps', 'Alignment Score'],
                 'Value': [
                     alignment_result.stats['matches'],
                     alignment_result.stats['mismatches'],
                     alignment_result.stats['gaps'],
-                    f"{alignment_result.stats['identity']:.2f}%",
-                    f"{alignment_result.stats['coverage']:.2f}%",
-                    f"{alignment_result.score:.3f}"
+                    f"{alignment_result.score}"
                 ]
             }
             st.dataframe(pd.DataFrame(alignment_data), hide_index=True)
@@ -780,14 +835,19 @@ class SangerAnalysisApp:
         with col2:
             # Statistics report
             report_data = {
-                'Consensus_Length': len(alignment_result.consensus),
-                'Alignment_Identity': f"{alignment_result.stats['identity']:.2f}%",
-                'Alignment_Coverage': f"{alignment_result.stats['coverage']:.2f}%",
-                'Quality_Cutoff': params['quality_cutoff'],
-                'Window_Size': params['window_size'],
+                "Metric": ["Matches", "Mismatches", "Gaps", "Alignment Score", 'Consensus_Length', 'Quality_Cutoff'
+                           , 'Window_Size', 'Score_Margin'],
+                "Value": [alignment_result.stats['matches'],
+                          alignment_result.stats['mismatches'],
+                          alignment_result.stats['gaps'],
+                          alignment_result.score,
+                          len(alignment_result.consensus),
+                          params['quality_cutoff'],
+                          params['window_size'],
+                          params['score_margin']]
             }
-            report_df = pd.DataFrame([report_data]).T
-            report_csv = report_df.to_csv()
+            report_df = pd.DataFrame(report_data)
+            report_csv = report_df.to_csv(index=False)
 
             st.download_button(
                 label="Download Statistics (CSV)",
