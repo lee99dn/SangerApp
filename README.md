@@ -36,7 +36,7 @@ Designed for use in molecular biology, diagnostics, and teaching labs.
 - 💾 Export to FASTA, CSV
   <img width="1186" height="179" alt="image" src="https://github.com/user-attachments/assets/228b01c5-1571-40b4-b679-dde72112508d" />
 - 💾 (Optional) Blast Result
-  <img width="1197" height="740" alt="image" src="https://github.com/user-attachments/assets/eb5bf626-c8b7-457d-977c-04dab8240e9c" />
+  <img width="1187" height="747" alt="image" src="https://github.com/user-attachments/assets/19abcc7b-470e-42cc-b1f1-dd57df1ad37c" />
 - 🌐 Web interface (Streamlit) — runs locally or on Streamlit Cloud
 
 ---
