@@ -9,6 +9,7 @@ Designed for use in molecular biology, diagnostics, and teaching labs.
 ## ✨ Features
 
 - 🧬 Input paired `.ab1` Sanger reads (forward and reverse)
+- <img width="1225" height="603" alt="image" src="https://github.com/user-attachments/assets/b0f24f27-62cc-409e-a171-4df269c2c16b" />
 - ✂️ Automatic quality-based trimming
 - 🔁 Reverse complement + reverse Phred score handling
 - 🧩 Overlap alignment using Clustal-style scoring
