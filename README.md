@@ -14,7 +14,7 @@ Designed for use in molecular biology, diagnostics, and teaching labs.
   Analysis Parameters Default:\
   Quality Cutoff: 20 (Minimum phred score threshold) (Sequence cannot be trimmed by more than 10% of the sequence length)\
   Window Size: 10 (Size of sliding window for quality assessment)\
-  Adjustment: 0 (How much better must the Best Window be to override the First Acceptable Window? If the score margin is 0, select the First Acceptable Window.)
+  Adjustment: 0 (How much bp further must the Best Window be to override the First Acceptable Window? If the adjustment is 0, select the First Acceptable Window.)
   
   <img width="465" height="567" alt="image" src="https://github.com/user-attachments/assets/8c1be7a2-62b3-4bea-bdd3-a3c47bd7ad26" />
 - 🔁 Reverse complement + reverse Phred score handling
