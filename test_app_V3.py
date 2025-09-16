@@ -485,7 +485,6 @@ class SequenceAnalyzer:
                 round(np.mean(qual), 2),
                 round(np.median(qual), 2)
             ])
-
         return stats
 
 
@@ -682,6 +681,8 @@ class SangerAnalysisApp:
         with col1:
             st.subheader("Forward Read - Trimmed")
             forward_stats = self.analyzer.calculate_stats(forward_trimmed.trimmed_seq, forward_trimmed.trimmed_qual)
+            df = pd.DataFrame(forward_stats)
+            print(df.dtypes)
             st.dataframe(pd.DataFrame(forward_stats), hide_index=True)
 
             fig_forward_trim = self.visualizer.plot_quality_scores(
@@ -695,6 +696,8 @@ class SangerAnalysisApp:
         with col2:
             st.subheader("Reverse Read - Trimmed (Original orientation)")
             reverse_stats = self.analyzer.calculate_stats(reverse_trimmed.trimmed_seq, reverse_trimmed.trimmed_qual)
+            df = pd.DataFrame(reverse_stats)
+            print(df.dtypes)
             st.dataframe(pd.DataFrame(reverse_stats), hide_index=True)
 
             fig_reverse_trim = self.visualizer.plot_quality_scores(
@@ -941,6 +944,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
