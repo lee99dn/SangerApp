@@ -43,7 +43,4 @@ Designed for use in molecular biology, diagnostics, and teaching labs.
 
 ## 🚀 Getting Started
 
-### 📦 Install requirements
-
-```bash
-pip install -r requirements.txt
+https://sangerapp.streamlit.app/
