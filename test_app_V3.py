@@ -9,6 +9,7 @@ from datetime import datetime
 import time
 from dataclasses import dataclass
 import re
+import matplotlib.ticker as ticker
 
 # BioPython imports with error handling
 try:
@@ -70,13 +71,21 @@ class SequenceQualityTrimmer:
     @staticmethod
     def trim_by_quality(seq: Seq, qual: List[int], cutoff: int = 20,
                         window_size: int = 10,
-                        score_margin: float = 1.5,
+                        adjustment: int = 0,
                         warn_callback: Optional[callable] = None) -> TrimResult:
         """
-        Hybrid Sanger trimming logic:
+        Simplified Sanger trimming logic for paired-end sequencing:
         - Finds the first acceptable window (sliding window style).
-        - Also finds the best-scoring window above the cutoff.
-        - If best is significantly better than first (by score_margin), use it. Else, use the first one.
+        - Allows user to adjust the trim position by +/- 30bp from the first window.
+        - Only trims from the start (5' end), preserving the 3' end for paired-end compatibility.
+
+        Args:
+            seq: Input sequence
+            qual: Quality scores
+            cutoff: Minimum acceptable quality score for window
+            window_size: Size of sliding window
+            adjustment: Position adjustment from first window (-30 to +30 bp recommended)
+            warn_callback: Optional warning callback function
         """
 
         # Input validation
@@ -99,51 +108,48 @@ class SequenceQualityTrimmer:
                     warnings.warn(msg)
                 return TrimResult(seq, qual, 0, len(seq) - 1)
 
-        if len(seq) != len(qual):
-            raise ValueError("Sequence and quality score lengths do not match.")
-
         # Handle edge cases
         if len(seq) < window_size:
             return TrimResult(seq, qual, 0, len(seq) - 1)
 
+        # Find first acceptable window
         first_start = None
-        first_mean = None
-        best_start = None
-        best_mean = -np.inf
 
         for i in range(len(qual) - window_size + 1):
             window = qual[i:i + window_size]
             window_mean = np.mean(window)
-
             if window_mean >= cutoff:
-                if first_start is None:
-                    first_start = i
-                    first_mean = window_mean
-                if window_mean > best_mean:
-                    best_mean = window_mean
-                    best_start = i
+                first_start = i
+                if first_start >= 0.1 * len(seq):
+                   first_start = int(0.1 * len(seq))
+                   msg = f"First acceptable window at position {first_start} exceeds 10% trim limit ({int(0.1 * len(seq))}). Using maximum trim position."
+                   if warn_callback:
+                       warn_callback(msg)
+                break  # Stop at first acceptable window
 
-        # Decide which to use - FIXED LOGIC
+        # If no acceptable window found, return full sequence
         if first_start is None:
-            # No window passed the cutoff, return full sequence
+            msg = f"No window of size {window_size} found with quality >= {cutoff}. Returning full sequence."
+            if warn_callback:
+                warn_callback(msg)
+            else:
+                warnings.warn(msg)
             return TrimResult(seq, qual, 0, len(seq) - 1)
+        # Cannot trim more than 10% of sequence
 
-        # Fixed logic: When score_margin is 0, ALWAYS use first_start
-        # When score_margin > 0, only use best if it's better by MORE than the margin
-        if score_margin <= 0:
+
+
+        # Calculate final start position with adjustment
+        start = first_start + adjustment
+        if start < 0:
             start = first_start
-        else:
-            # Only use best if it's significantly better than first by MORE than the margin
-            use_best = (best_start is not None and
-                        first_mean is not None and
-                        (best_mean - first_mean) > score_margin)
-            start = best_start if use_best else first_start
 
+
+        # Trim only from the start (preserve 3' end for paired-end sequencing)
         trimmed_seq = seq[start:]
         trimmed_qual = qual[start:]
 
         return TrimResult(trimmed_seq, trimmed_qual, start, len(seq) - 1)
-
 
 class SequenceAligner:
     """Handles sequence alignment and consensus generation."""
@@ -242,7 +248,7 @@ class SequenceAligner:
         aligner.mode = 'global'
         aligner.match_score = 1
         aligner.mismatch_score = -1
-        aligner.open_gap_score = -5
+        aligner.open_gap_score = -3
         aligner.extend_gap_score = -0.5
         aligner.query_end_gap_score = 0.0
         aligner.target_end_gap_score = 0.0
@@ -370,7 +376,7 @@ class BlastAnalyzer:
         if hits:
             best_hit = hits[0]
             st.info(
-                f"🎯 Best match: {best_hit.description} (Identity: {best_hit.identity:.1f}%, E-value: {best_hit.e_value:.2e})")
+                f"🎯 Best match: {best_hit.description} (Identity: {best_hit.identity:.2f}%, E-value: {best_hit.e_value:.2e})")
 
         return df
 
@@ -493,8 +499,10 @@ class Visualizer:
         fig, ax = plt.subplots(figsize=(12, 6))
 
         positions = range(len(quality_scores))
-        ax.plot(positions, quality_scores, 'b-', alpha=0.7, linewidth=1)
-        ax.fill_between(positions, quality_scores, alpha=0.3)
+        ax.plot(positions, quality_scores, 'b-', alpha=1, linewidth=1)
+        #ax.fill_between(positions, quality_scores, alpha=0.3)
+        space = 50
+        ax.xaxis.set_major_locator(ticker.MultipleLocator(space))
 
         # Highlight trimmed region if provided
         if trimmed_region:
@@ -535,14 +543,16 @@ class SangerAnalysisApp:
     def setup_page(self):
         """Setup Streamlit page configuration."""
         st.set_page_config(
-            page_title="Enhanced Sanger Sequencing Analysis",
+            page_title="SangerApp",
             page_icon="🧬",
             layout="wide"
         )
 
-        st.title("🧬 Enhanced Sanger Sequencing Analysis")
+        st.title("🧬 SangerApp")
         st.markdown(
             "Upload AB1 chromatogram files for forward and reverse reads to generate consensus sequences and perform BLAST analysis")
+        url = "https://github.com/lee99dn/SangerAssembly/blob/main/README.md"
+        st.markdown("Tutorial >>>> [link](%s)" % url)
 
         if not BIOPYTHON_AVAILABLE:
             st.error("BioPython is required for this application. Please install it with: pip install biopython")
@@ -554,9 +564,9 @@ class SangerAnalysisApp:
 
         # Quality trimming parameters
         st.sidebar.subheader("Quality Trimming")
-        quality_cutoff = st.sidebar.slider("Quality Cutoff", 10, 40, 20, help="Minimum quality score threshold")
+        quality_cutoff = st.sidebar.slider("Quality Cutoff", 10, 40, 20, help="Minimum quality score threshold\n (Sequence cannot be trimmed by more than 10% of the sequence length.)")
         window_size = st.sidebar.slider("Window Size", 2, 30, 10, help="Size of sliding window for quality assessment")
-        score_margin = st.sidebar.slider("Score Margin", 0.0, 5.0, 1.5, step=0.1,
+        adjustment = st.sidebar.slider("Adjustment", -30, 30, 0, step=1,
                                          help="How much better the best window must be to override the first acceptable window")
 
         # BLAST parameters
@@ -570,7 +580,7 @@ class SangerAnalysisApp:
         return {
             'quality_cutoff': quality_cutoff,
             'window_size': window_size,
-            'score_margin': score_margin,
+            'adjustment': adjustment,
             'run_blast': run_blast,
             'blast_database': blast_database,
             'blast_program': blast_program,
@@ -655,12 +665,12 @@ class SangerAnalysisApp:
         forward_trimmed = self.trimmer.trim_by_quality(
             forward_data.sequence, forward_data.quality_scores,
             cutoff=params['quality_cutoff'], window_size=params['window_size'],
-            score_margin=params['score_margin'], warn_callback=st.warning
+            adjustment=params['adjustment'], warn_callback=st.warning
         )
         reverse_trimmed = self.trimmer.trim_by_quality(
             reverse_data.sequence, reverse_data.quality_scores,
             cutoff=params['quality_cutoff'], window_size=params['window_size'],
-            score_margin=params['score_margin'], warn_callback=st.warning
+            adjustment=params['adjustment'], warn_callback=st.warning
         )
 
         # Apply reverse complement to reverse sequence
@@ -828,7 +838,7 @@ class SangerAnalysisApp:
 
         with col1:
             # Consensus sequence download
-            consensus_fasta = f">Consensus_Sequence_{datetime.now().strftime('%Y%m%d_%H%M%S')}\n{alignment_result.consensus}"
+            consensus_fasta = f">Consensus_Sequence_{datetime.now().strftime('%Y%m%d_%H%M%S')}\n{alignment_result.consensus}\n"
             st.download_button(
                 label="Download Consensus (FASTA)",
                 data=consensus_fasta,
@@ -840,7 +850,7 @@ class SangerAnalysisApp:
             # Statistics report
             report_data = {
                 "Metric": ["Matches", "Mismatches", "Gaps", "Alignment Score", 'Consensus_Length', 'Quality_Cutoff'
-                           , 'Window_Size', 'Score_Margin'],
+                           , 'Window_Size', 'Adjustment'],
                 "Value": [alignment_result.stats['matches'],
                           alignment_result.stats['mismatches'],
                           alignment_result.stats['gaps'],
@@ -848,7 +858,7 @@ class SangerAnalysisApp:
                           len(alignment_result.consensus),
                           params['quality_cutoff'],
                           params['window_size'],
-                          params['score_margin']]
+                          params['adjustment']]
             }
             report_df = pd.DataFrame(report_data)
             report_csv = report_df.to_csv(index=False)
