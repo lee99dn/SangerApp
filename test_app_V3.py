@@ -564,7 +564,7 @@ class SangerAnalysisApp:
 
         # Quality trimming parameters
         st.sidebar.subheader("Quality Trimming")
-        quality_cutoff = st.sidebar.slider("Quality Cutoff", 10, 40, 20, help="Minimum quality score threshold\n (Sequence cannot be trimmed by more than 10% of the sequence length.)")
+        quality_cutoff = st.sidebar.slider("Quality Cutoff", 10, 40, 20, help="Minimum quality score threshold\n (Sequence cannot be trimmed by more than 30% of the sequence length.)")
         window_size = st.sidebar.slider("Window Size", 2, 30, 10, help="Size of sliding window for quality assessment")
         adjustment = st.sidebar.slider("Adjustment", -30, 30, 0, step=1,
                                          help="How much better the best window must be to override the first acceptable window")
@@ -941,4 +941,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
