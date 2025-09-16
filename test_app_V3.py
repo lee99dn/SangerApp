@@ -473,15 +473,15 @@ class SequenceAnalyzer:
                 seq_str.count('C'),
                 seq_str.count('N'),
                 round((seq_str.count('G') + seq_str.count('C')) / len(seq_str) * 100, 2) if len(
-                    seq_str) > 0 else 0
+                    seq_str) > 0 else 0.0
                 ]
         }
 
         if qual:
             stats['Metric'].extend(['Min Quality', 'Max Quality', 'Mean Quality', 'Median Quality'])
             stats['Value'].extend([
-                min(qual),
-                max(qual),
+                float(min(qual)),
+                float(max(qual)),
                 round(np.mean(qual), 2),
                 round(np.median(qual), 2)
             ])
@@ -941,5 +941,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
