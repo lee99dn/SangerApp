@@ -120,9 +120,9 @@ class SequenceQualityTrimmer:
             window_mean = np.mean(window)
             if window_mean >= cutoff:
                 first_start = i
-                if first_start >= 0.1 * len(seq):
-                   first_start = int(0.1 * len(seq))
-                   msg = f"First acceptable window at position {first_start} exceeds 10% trim limit ({int(0.1 * len(seq))}). Using maximum trim position."
+                if first_start >= 0.3 * len(seq):
+                   first_start = int(0.3 * len(seq))
+                   msg = f"First acceptable window at position {first_start} exceeds 30% trim limit ({int(0.3 * len(seq))}). Using maximum trim position."
                    if warn_callback:
                        warn_callback(msg)
                 break  # Stop at first acceptable window
@@ -941,3 +941,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
