@@ -16,7 +16,7 @@ Link for running program: https://sangerapp.streamlit.app/
 ### ✂️ Automatic quality-based trimming
   
 #### Analysis Parameters Default:
-- Quality Cutoff: 20 (Minimum phred score threshold) (Sequence cannot be trimmed by more than 30% of the sequence length)\
+- Quality Cutoff: 20 (Minimum phred score threshold) (Sequence cannot be trimmed by more than 30% of the sequence length)
 - Window Size: 10 (Size of sliding window for quality assessment)
 - Adjustment: 0 (How much bp further must the Best Window be to override the First Acceptable Window? If the adjustment is 0, select the First Acceptable Window.)
   
