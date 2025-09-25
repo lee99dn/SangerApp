@@ -4,7 +4,7 @@ A lightweight, Python-based Streamlit web application for generating high-qualit
 
 Designed for use in molecular biology, diagnostics, and teaching labs.
 
-Link for running program: https://sangerapp.streamlit.app/
+Link for running program: https://sangerapp-v1.streamlit.app/
 
 ---
 
