@@ -551,7 +551,10 @@ class SangerAnalysisApp:
         st.markdown(
             "Upload AB1 chromatogram files for forward and reverse reads to generate consensus sequences and perform BLAST analysis")
         url = "https://github.com/lee99dn/SangerAssembly/blob/main/README.md"
+        url1 = "https://amzn.to/4p45XuI"
         st.markdown("Tutorial >>>> [link](%s)" % url)
+
+        st.markdown("Amazon >>>> [link](%s)" % url1)
 
         if not BIOPYTHON_AVAILABLE:
             st.error("BioPython is required for this application. Please install it with: pip install biopython")
@@ -940,6 +943,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
