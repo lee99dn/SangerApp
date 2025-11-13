@@ -554,7 +554,7 @@ class SangerAnalysisApp:
         url1 = "https://amzn.to/4p45XuI"
         st.markdown("Tutorial >>>> [link](%s)" % url)
 
-        st.markdown("Amazon >>>> [link](%s)" % url1)
+        st.markdown("Support us >>>> [link](%s)" % url1)
 
         if not BIOPYTHON_AVAILABLE:
             st.error("BioPython is required for this application. Please install it with: pip install biopython")
@@ -943,6 +943,7 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
 
