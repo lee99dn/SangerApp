@@ -76,7 +76,7 @@ class SequenceQualityTrimmer:
         """
         Simplified Sanger trimming logic for paired-end sequencing:
         - Finds the first acceptable window (sliding window style).
-        - Allows user to adjust the trim position by +/- 30bp from the first window.
+        - Allows user to adjust the trim window position by +/- 30bp from the first window.
         - Only trims from the start (5' end), preserving the 3' end for paired-end compatibility.
 
         Args:
@@ -513,14 +513,14 @@ class Visualizer:
                 ax.axvspan(end + 1, len(quality_scores) - 1, alpha=0.2, color='red',
                            label=f'Trimmed end ({end + 1}-{len(quality_scores) - 1})')
 
-        ax.set_xlabel('Position (0-based indexing)')
+        ax.set_xlabel('Window position (0-based indexing)')
         ax.set_ylabel('Quality Score')
         ax.set_title(title)
         ax.grid(True, alpha=0.3)
         if trimmed_region:
             ax.legend()
             # Add explanatory text
-            textstr = 'Note: Positions use 0-based indexing (computer counting)\nFor 1-based counting (human), add 1 to each position'
+            textstr = 'Note: Window positions use 0-based indexing (computer counting)\nFor 1-based counting (human), add 1 to each position'
             props = dict(boxstyle='round', facecolor='wheat', alpha=0.5)
             ax.text(0.02, 0.98, textstr, transform=ax.transAxes, fontsize=8,
                     verticalalignment='top', bbox=props)
