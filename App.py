@@ -116,16 +116,13 @@ class SequenceQualityTrimmer:
             return TrimResult(seq, qual, 0, len(seq) - 1, is_failed=True)
 
         # --- 2. Find 3' End (Backward Scan) ---
-        # สแกนถอยหลังจากขวาสุดไปซ้ายสุด (อิสระจากหัวสาย 100%)
         end = len(qual) - 1
         for i in range(len(qual) - window_size, -1, -1):
             window = qual[i:i + window_size]
             if np.mean(window) >= cutoff:
-                # เจอหน้าต่างที่ดีที่สุด (จากฝั่งท้าย) แล้ว ให้หยุด
                 end = i + window_size - 1
                 break
                 
-        # ป้องกันไม่ให้จุดปลายสุด ถอยลึกไปเกินกว่าจุดเริ่มต้น
         end = max(first_start, end)
         end = min(len(seq) - 1, end)
 
