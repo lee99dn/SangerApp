@@ -39,6 +39,7 @@ class TrimResult:
     trimmed_qual: List[int]
     start_pos: int
     end_pos: int
+    limit_exceeded: bool = False
 
 
 @dataclass
@@ -72,47 +73,34 @@ class SequenceQualityTrimmer:
     def trim_by_quality(seq: Seq, qual: List[int], cutoff: int = 20,
                         window_size: int = 10,
                         adjustment: int = 0,
+                        read_name: str = "Sequence",
                         warn_callback: Optional[callable] = None) -> TrimResult:
-        """
-        Simplified Sanger trimming logic for paired-end sequencing:
-        - Finds the first acceptable window (sliding window style).
-        - Allows user to adjust the trim window position by +/- 30bp from the first window.
-        - Only trims from the start (5' end), preserving the 3' end for paired-end compatibility.
-
-        Args:
-            seq: Input sequence
-            qual: Quality scores
-            cutoff: Minimum acceptable quality score for window
-            window_size: Size of sliding window
-            adjustment: Position adjustment from first window (-30 to +30 bp recommended)
-            warn_callback: Optional warning callback function
-        """
+        
+        limit_hit = False
 
         # Input validation
         if len(seq) != len(qual):
             raise ValueError(f"Sequence length ({len(seq)}) doesn't match quality length ({len(qual)})")
 
         if not qual or len(qual) == 0:
-            return TrimResult(seq, qual, 0, len(seq) - 1)
+            return TrimResult(seq, qual, 0, len(seq) - 1, limit_hit)
 
-        # Handle case where window is larger than sequence
         if window_size > len(qual):
             avg_qual = np.mean(qual)
             if avg_qual >= cutoff:
-                return TrimResult(seq, qual, 0, len(seq) - 1)
+                return TrimResult(seq, qual, 0, len(seq) - 1, limit_hit)
             else:
-                msg = f"Sequence too short for window size {window_size}. Average quality {avg_qual:.1f} below cutoff {cutoff}."
+                msg = f"[{read_name}] Sequence too short for window size {window_size}. Average quality {avg_qual:.1f} below cutoff {cutoff}."
                 if warn_callback:
                     warn_callback(msg)
                 else:
                     warnings.warn(msg)
-                return TrimResult(seq, qual, 0, len(seq) - 1)
+                return TrimResult(seq, qual, 0, len(seq) - 1, limit_hit)
 
-        # Handle edge cases
         if len(seq) < window_size:
-            return TrimResult(seq, qual, 0, len(seq) - 1)
+            return TrimResult(seq, qual, 0, len(seq) - 1, limit_hit)
 
-        # Find first acceptable window
+        # --- 1. Find 5' Start (Forward Scan) ---
         first_start = None
 
         for i in range(len(qual) - window_size + 1):
@@ -120,36 +108,59 @@ class SequenceQualityTrimmer:
             window_mean = np.mean(window)
             if window_mean >= cutoff:
                 first_start = i
-                if first_start >= 0.3 * len(seq):
+                # Limit 5' trim to 30% independently
+                if first_start > 0.3 * len(seq):
                    first_start = int(0.3 * len(seq))
-                   msg = f"First acceptable window at position {first_start} exceeds 30% trim limit ({int(0.3 * len(seq))}). Using maximum trim position."
+                   limit_hit = True
+                   msg = f"[{read_name}] 5' trimming exceeds 30% limit. Adjusted start position to bp {first_start + 1}."
                    if warn_callback:
                        warn_callback(msg)
-                break  # Stop at first acceptable window
+                break 
 
-        # If no acceptable window found, return full sequence
         if first_start is None:
-            msg = f"No window of size {window_size} found with quality >= {cutoff}. Returning full sequence."
+            msg = f"[{read_name}] No window of size {window_size} found with quality >= {cutoff}. Returning full sequence."
             if warn_callback:
                 warn_callback(msg)
             else:
                 warnings.warn(msg)
-            return TrimResult(seq, qual, 0, len(seq) - 1)
-        # Cannot trim more than 10% of sequence
+            return TrimResult(seq, qual, 0, len(seq) - 1, limit_hit)
 
+        # --- 2. Find 3' End (Backward Scan) ---
+        end = len(qual) - 1
+        # backward scan
+        for i in range(len(qual) - window_size, first_start - 1, -1):
+            window = qual[i:i + window_size]
+            if np.mean(window) >= cutoff:
+                #Final window instead
+                end = i + window_size - 1
+                break
+                
+        end = max(first_start, end)
+        end = min(len(seq) - 1, end)
 
+        # --- 3. Limit 3' end trim to 30% independently ---
+        max_trim_per_end = int(0.3 * len(seq))
+        current_3_trim = (len(seq) - 1) - end
+        
+        if current_3_trim > max_trim_per_end:
+            # Re-adjust end position to respect the 30% limit for the 3' end
+            new_end = (len(seq) - 1) - max_trim_per_end
+            if new_end > end:
+                end = new_end
+                limit_hit = True
+                msg = f"[{read_name}] 3' trimming exceeds 30% limit. Adjusted 3' trim position to bp {end + 1}."
+                if warn_callback:
+                    warn_callback(msg)
 
-        # Calculate final start position with adjustment
+        # --- 4. Apply Manual Adjustment (5' end only) ---
         start = first_start + adjustment
-        if start < 0:
-            start = first_start
+        start = max(0, start)
+        start = min(start, end)
 
+        trimmed_seq = seq[start:end + 1]
+        trimmed_qual = qual[start:end + 1]
 
-        # Trim only from the start (preserve 3' end for paired-end sequencing)
-        trimmed_seq = seq[start:]
-        trimmed_qual = qual[start:]
-
-        return TrimResult(trimmed_seq, trimmed_qual, start, len(seq) - 1)
+        return TrimResult(trimmed_seq, trimmed_qual, start, end, limit_hit)
 
 class SequenceAligner:
     """Handles sequence alignment and consensus generation."""
@@ -384,35 +395,21 @@ class BlastAnalyzer:
 def extract_organism_from_blast_title(title):
     """
     Extract organism name from various BLAST XML title formats
-
-    Handles formats like:
-    - gi|123|gb|ABC123.1| Organism name 16S ribosomal RNA gene, partial sequence
-    - gb|ABC123.1| Organism name 16S ribosomal RNA gene, partial sequence
-    - ABC123.1 Organism name 16S ribosomal RNA gene, partial sequence
     """
-
-    # Remove leading/trailing whitespace
     title = title.strip()
-
-    # Handle pipe-separated formats (gi|123|gb|ABC123.1| ...)
     if '|' in title:
         parts = title.split('|')
         if len(parts) >= 4:
-            # Standard format: gi|123|gb|ABC123.1| Organism description
             description = parts[4].strip() if len(parts) > 4 else parts[-1].strip()
         else:
-            # Simple format: gb|ABC123.1| Organism description
             description = parts[-1].strip()
     else:
-        # No pipes - format: ABC123.1 Organism description
-        # Split on first space after accession
         match = re.match(r'^(\S+)\s+(.+)', title)
         if match:
             description = match.group(2).strip()
         else:
             description = title
 
-    # Remove common gene/sequence descriptions
     patterns_to_remove = [
         r'\s+16S\s+ribosomal\s+RNA.*$',
         r'\s+16S\s+rRNA.*$',
@@ -429,7 +426,7 @@ def extract_organism_from_blast_title(title):
     organism_name = description
     for pattern in patterns_to_remove:
         organism_name = re.sub(pattern, '', organism_name, flags=re.IGNORECASE)
-        if organism_name != description:  # If we found a match, stop
+        if organism_name != description: 
             break
 
     return organism_name.strip()
@@ -493,37 +490,55 @@ class Visualizer:
 
     @staticmethod
     def plot_quality_scores(quality_scores: List[int], title: str = "Quality Scores",
-                            trimmed_region: Optional[Tuple[int, int]] = None):
-        """Plot quality scores with optional trimmed region highlighting."""
+                            trimmed_region: Optional[Tuple[int, int]] = None,
+                            window_size: Optional[int] = None, cutoff: Optional[int] = None):
+        """Plot quality scores with optional trimmed region highlighting and rolling mean."""
         fig, ax = plt.subplots(figsize=(12, 6))
 
-        positions = range(len(quality_scores))
-        ax.plot(positions, quality_scores, 'b-', alpha=1, linewidth=1)
-        #ax.fill_between(positions, quality_scores, alpha=0.3)
+        # ปรับแกน x ให้เริ่มที่ 1 (1-based indexing)
+        positions = range(1, len(quality_scores) + 1)
+        
+        # Plot Raw Quality
+        ax.plot(positions, quality_scores, 'b-', alpha=0.3, linewidth=1, label='Raw Q-Score')
+
+        # Calculate and plot Rolling Mean
+        if window_size and cutoff:
+            x_mean = []
+            y_mean = []
+            for i in range(len(quality_scores) - window_size + 1):
+                y_mean.append(np.mean(quality_scores[i:i+window_size]))      
+                x_mean.append(i + 1 + (window_size - 1) / 2.0)
+            ax.plot(x_mean, y_mean, color='darkorange', alpha=1, linewidth=2, 
+                    label=f'Window Mean ({window_size}bp)')
+            ax.axhline(y=cutoff, color='r', linestyle='--', alpha=0.7, label=f'Cutoff ({cutoff})')
+
         space = 50
         ax.xaxis.set_major_locator(ticker.MultipleLocator(space))
 
-        # Highlight trimmed region if provided
+        # Highlight trimmed region if provided (1-based)
         if trimmed_region:
             start, end = trimmed_region
-            ax.axvspan(start, end, alpha=0.2, color='green', label=f'Kept region ({start}-{end})')
-            if start > 0:
-                ax.axvspan(0, start, alpha=0.2, color='red', label=f'Trimmed start (0-{start - 1})')
-            if end < len(quality_scores) - 1:
-                ax.axvspan(end + 1, len(quality_scores) - 1, alpha=0.2, color='red',
-                           label=f'Trimmed end ({end + 1}-{len(quality_scores) - 1})')
+            start_1b = start + 1
+            end_1b = end + 1
+            ax.axvspan(start_1b, end_1b, alpha=0.2, color='green', label=f'Kept region ({start_1b}-{end_1b})')
+            if start_1b > 1:
+                ax.axvspan(1, start_1b - 1, alpha=0.2, color='red', label=f'Trimmed start (1-{start_1b - 1})')
+            if end_1b < len(quality_scores):
+                ax.axvspan(end_1b + 1, len(quality_scores), alpha=0.2, color='red',
+                           label=f'Trimmed end ({end_1b + 1}-{len(quality_scores)})')
 
-        ax.set_xlabel('Window position (0-based indexing)')
+        ax.set_xlabel('Base Position (bp)')
         ax.set_ylabel('Quality Score')
         ax.set_title(title)
+        
+        
+        ax.set_xlim(1, len(quality_scores))
+        
+        
+        ax.set_ylim(bottom=0)
+        
         ax.grid(True, alpha=0.3)
-        if trimmed_region:
-            ax.legend()
-            # Add explanatory text
-            textstr = 'Note: Window positions use 0-based indexing (computer counting)\nFor 1-based counting (human), add 1 to each position'
-            props = dict(boxstyle='round', facecolor='wheat', alpha=0.5)
-            ax.text(0.02, 0.98, textstr, transform=ax.transAxes, fontsize=8,
-                    verticalalignment='top', bbox=props)
+        ax.legend(loc='upper right')
 
         return fig
 
@@ -551,10 +566,7 @@ class SangerAnalysisApp:
         st.markdown(
             "Upload AB1 chromatogram files for forward and reverse reads to generate consensus sequences and perform BLAST analysis")
         url = "https://github.com/lee99dn/SangerAssembly/blob/main/README.md"
-        #url1 = "https://amzn.to/4p45XuI"
         st.markdown("Tutorial >>>> [link](%s)" % url)
-
-        #st.markdown("Support us >>>> [link](%s)" % url1)
 
         if not BIOPYTHON_AVAILABLE:
             st.error("BioPython is required for this application. Please install it with: pip install biopython")
@@ -566,10 +578,11 @@ class SangerAnalysisApp:
 
         # Quality trimming parameters
         st.sidebar.subheader("Quality Trimming")
-        quality_cutoff = st.sidebar.slider("Quality Cutoff", 10, 40, 20, help="Minimum quality score threshold\n (Sequence cannot be trimmed by more than 30% of the sequence length.)")
+        quality_cutoff = st.sidebar.slider("Quality Cutoff", 10, 40, 20, 
+                                           help="Minimum quality score threshold based on window mean\n(Total trim cannot exceed 30% of sequence)")
         window_size = st.sidebar.slider("Window Size", 2, 30, 10, help="Size of sliding window for quality assessment")
-        adjustment = st.sidebar.slider("Adjustment", -30, 30, 0, step=1,
-                                         help="How much better the best window must be to override the first acceptable window")
+        adjustment = st.sidebar.slider("Start Adjustment (5' end)", -30, 30, 0, step=1,
+                                         help="Adjust the start trim position from the first acceptable window")
 
         # BLAST parameters
         st.sidebar.subheader("BLAST Analysis")
@@ -579,6 +592,11 @@ class SangerAnalysisApp:
         blast_program = st.sidebar.selectbox("BLAST Program", ["blastn", "blastx"], help="BLAST program to use")
         max_hits = st.sidebar.slider("Max BLAST Hits", 5, 500, 10, help="Maximum number of BLAST hits to retrieve")
 
+        # Output parameters
+        st.sidebar.subheader("Output Settings")
+        use_smart_name = st.sidebar.checkbox("Smart Name", True, 
+                                             help="Automatically extract sample name from filename (e.g., gets '1' from ATGC_xxx_1_27F_...)")
+
         return {
             'quality_cutoff': quality_cutoff,
             'window_size': window_size,
@@ -586,11 +604,12 @@ class SangerAnalysisApp:
             'run_blast': run_blast,
             'blast_database': blast_database,
             'blast_program': blast_program,
-            'max_hits': max_hits
+            'max_hits': max_hits,
+            'use_smart_name': use_smart_name
         }
 
-    def handle_file_upload(self) -> Tuple[Optional[SequenceData], Optional[SequenceData]]:
-        """Handle file upload and reading."""
+    def handle_file_upload(self) -> Tuple[Optional[SequenceData], Optional[SequenceData], Optional[str]]:
+        """Handle file upload and reading, returning filename for smart naming."""
         col1, col2 = st.columns(2)
 
         with col1:
@@ -610,23 +629,25 @@ class SangerAnalysisApp:
             )
 
         forward_data = reverse_data = None
+        fw_filename = None
 
         if forward_file is not None and reverse_file is not None:
             try:
                 forward_data = self.file_handler.read_ab1_file(forward_file.read())
                 reverse_data = self.file_handler.read_ab1_file(reverse_file.read())
+                fw_filename = forward_file.name  # เก็บชื่อไฟล์เพื่อนำไปใช้ดึงชื่อตัวอย่าง
 
                 if forward_data is None or reverse_data is None:
                     st.error("Failed to read AB1 files")
-                    return None, None
+                    return None, None, None
 
                 st.success("✅ AB1 files loaded successfully!")
 
             except Exception as e:
                 st.error(f"An error occurred during file reading: {e}")
-                return None, None
+                return None, None, None
 
-        return forward_data, reverse_data
+        return forward_data, reverse_data, fw_filename
 
     def display_raw_sequence_info(self, forward_data: SequenceData, reverse_data: SequenceData):
         """Display raw sequence information."""
@@ -663,22 +684,22 @@ class SangerAnalysisApp:
         """Perform quality trimming on sequences."""
         st.header("✂️ Quality Trimming")
 
-        # Trim sequences
         forward_trimmed = self.trimmer.trim_by_quality(
             forward_data.sequence, forward_data.quality_scores,
             cutoff=params['quality_cutoff'], window_size=params['window_size'],
-            adjustment=params['adjustment'], warn_callback=st.warning
+            adjustment=params['adjustment'], read_name="Forward Read",
+            warn_callback=st.warning
         )
         reverse_trimmed = self.trimmer.trim_by_quality(
             reverse_data.sequence, reverse_data.quality_scores,
             cutoff=params['quality_cutoff'], window_size=params['window_size'],
-            adjustment=params['adjustment'], warn_callback=st.warning
+            adjustment=params['adjustment'], read_name="Reverse Read",
+            warn_callback=st.warning
         )
 
-        # Apply reverse complement to reverse sequence
         reverse_trimmed_rc = SequenceAligner.reverse_complement(reverse_trimmed.trimmed_seq)
-        reverse_qual_rc = reverse_trimmed.trimmed_qual[::-1]  # Reverse Phred scores
-        # Display results
+        reverse_qual_rc = reverse_trimmed.trimmed_qual[::-1]
+        
         col1, col2 = st.columns(2)
 
         with col1:
@@ -689,10 +710,14 @@ class SangerAnalysisApp:
             fig_forward_trim = self.visualizer.plot_quality_scores(
                 forward_data.quality_scores,
                 "Forward Read - Quality Trimming",
-                trimmed_region=(forward_trimmed.start_pos, forward_trimmed.end_pos)
+                trimmed_region=(forward_trimmed.start_pos, forward_trimmed.end_pos),
+                window_size=params['window_size'],
+                cutoff=params['quality_cutoff']
             )
             st.pyplot(fig_forward_trim)
             plt.close()
+            st.success(f"✅ Kept Region: bp {forward_trimmed.start_pos + 1} to {forward_trimmed.end_pos + 1} "
+                       f"(Retained length: {forward_trimmed.end_pos - forward_trimmed.start_pos + 1} bp)")
 
         with col2:
             st.subheader("Reverse Read - Trimmed (Original orientation)")
@@ -702,15 +727,17 @@ class SangerAnalysisApp:
             fig_reverse_trim = self.visualizer.plot_quality_scores(
                 reverse_data.quality_scores,
                 "Reverse Read - Quality Trimming (Original)",
-                trimmed_region=(reverse_trimmed.start_pos, reverse_trimmed.end_pos)
+                trimmed_region=(reverse_trimmed.start_pos, reverse_trimmed.end_pos),
+                window_size=params['window_size'],
+                cutoff=params['quality_cutoff']
             )
             st.pyplot(fig_reverse_trim)
             plt.close()
+            st.success(f"✅ Kept Region: bp {reverse_trimmed.start_pos + 1} to {reverse_trimmed.end_pos + 1} "
+                       f"(Retained length: {reverse_trimmed.end_pos - reverse_trimmed.start_pos + 1} bp)")
 
-        # Show reverse complement
         st.subheader("🔄 Reverse Read After Reverse Complement")
-        st.info(
-            "This is the reverse-complemented and trimmed reverse sequence that will be used for s generation.")
+        st.info("This is the reverse-complemented and trimmed reverse sequence that will be used for consensus generation.")
 
         col1, col2 = st.columns(2)
         with col1:
@@ -726,7 +753,7 @@ class SangerAnalysisApp:
 
     def generate_consensus(self, forward_trimmed: TrimResult, reverse_trimmed: TrimResult,
                            reverse_trimmed_rc: Seq, reverse_qual_rc: List[int],
-                           params: Dict[str, Any]) -> Optional[AlignmentResult]:
+                           params: Dict[str, Any], header_id: str) -> Optional[AlignmentResult]:
         """Generate consensus sequence using forward and reverse (rev-comp) trimmed reads."""
         st.header("🔗 Consensus Generation")
 
@@ -734,7 +761,6 @@ class SangerAnalysisApp:
             st.error("Trimmed sequences are too short for consensus generation")
             return None
 
-        # Align and generate consensus using quality-based approach
         alignment_result = self.aligner.align_sequences(
             forward_trimmed.trimmed_seq,
             reverse_trimmed_rc,
@@ -746,14 +772,14 @@ class SangerAnalysisApp:
             st.error("Failed to generate consensus sequence")
             return None
 
-        # Display results
         col1, col2 = st.columns([2, 1])
 
         with col1:
             st.subheader("Consensus Sequence")
+            # ใช้ header_id ที่ส่งเข้ามา
             st.text_area(
                 "Consensus (FASTA format)",
-                f">Consensus_Sequence_{datetime.now().strftime('%Y%m%d_%H%M%S')}\n{alignment_result.consensus}",
+                f">{header_id}\n{alignment_result.consensus}",
                 height=150
             )
 
@@ -781,40 +807,32 @@ class SangerAnalysisApp:
         if params['run_blast'] and len(consensus) > 0:
             st.header("🎯 BLAST Analysis")
 
-            # Minimum sequence length check
             if len(consensus) < 20:
                 st.warning("Consensus sequence too short for meaningful BLAST analysis (minimum 20 bp recommended)")
                 return None
 
-            # Create a unique key for this BLAST search based on sequence and parameters
             blast_key = f"blast_{hash(str(consensus))}_{params['blast_database']}_{params['blast_program']}_{params['max_hits']}"
 
-            # Initialize session state for BLAST results if not exists
             if 'blast_results' not in st.session_state:
                 st.session_state.blast_results = {}
 
-            # Check if we already have results for this exact search
             if blast_key in st.session_state.blast_results:
                 st.info("Using cached BLAST results. Click 'Clear BLAST Cache' below to run a new search.")
                 blast_hits = st.session_state.blast_results[blast_key]
             else:
-                # Run new BLAST search
                 blast_hits = self.blast_analyzer.run_blast_search(
                     consensus,
                     database=params['blast_database'],
                     program=params['blast_program'],
                     max_hits=params['max_hits']
                 )
-
-                # Cache the results
-                if blast_hits:  # Only cache if we got results
+                if blast_hits:
                     st.session_state.blast_results[blast_key] = blast_hits
 
             if blast_hits:
                 st.subheader("BLAST Results")
                 blast_df = self.blast_analyzer.display_blast_results(blast_hits)
 
-                # Add a button to clear BLAST cache if user wants to run a fresh search
                 if st.button("🔄 Clear BLAST Cache & Run New Search"):
                     if blast_key in st.session_state.blast_results:
                         del st.session_state.blast_results[blast_key]
@@ -827,11 +845,12 @@ class SangerAnalysisApp:
         return None
 
     def provide_downloads(self, alignment_result: AlignmentResult, forward_trimmed: TrimResult,
-                          reverse_trimmed_rc: Seq, params: Dict[str, Any], blast_df: Optional[pd.DataFrame] = None):
+                          reverse_trimmed: TrimResult, reverse_trimmed_rc: Seq, params: Dict[str, Any], 
+                          blast_df: Optional[pd.DataFrame] = None, forward_raw_len: int = 0, reverse_raw_len: int = 0,
+                          header_id: str = "Consensus_Sequence"):
         """Provide download options for results."""
         st.header("💾 Download Results")
 
-        # Determine number of columns based on whether BLAST results are available
         if blast_df is not None and not blast_df.empty:
             col1, col2, col3, col4 = st.columns(4)
         else:
@@ -839,28 +858,40 @@ class SangerAnalysisApp:
             col4 = None
 
         with col1:
-            # Consensus sequence download
-            consensus_fasta = f">Consensus_Sequence_{datetime.now().strftime('%Y%m%d_%H%M%S')}\n{alignment_result.consensus}\n"
+            # ใช้ header_id ควบคุมข้อมูลและชื่อไฟล์
+            consensus_fasta = f">{header_id}\n{alignment_result.consensus}\n"
             st.download_button(
                 label="Download Consensus (FASTA)",
                 data=consensus_fasta,
-                file_name=f"consensus_{datetime.now().strftime('%Y%m%d_%H%M%S')}.fasta",
+                file_name=f"{header_id}.fasta",
                 mime="text/plain"
             )
 
         with col2:
-            # Statistics report
             report_data = {
-                "Metric": ["Matches", "Mismatches", "Gaps", "Alignment Score", 'Consensus_Length', 'Quality_Cutoff'
-                           , 'Window_Size', 'Adjustment'],
-                "Value": [alignment_result.stats['matches'],
-                          alignment_result.stats['mismatches'],
-                          alignment_result.stats['gaps'],
-                          alignment_result.score,
-                          len(alignment_result.consensus),
-                          params['quality_cutoff'],
-                          params['window_size'],
-                          params['adjustment']]
+                "Metric": ["Matches", "Mismatches", "Gaps", "Alignment Score", 'Consensus_Length',
+                           'Quality_Cutoff', 'Window_Size', 'Start_Adjustment_5_end', 'Threshold_Type',
+                           'Forward_Raw_Length', 'Forward_Trimmed_Length', 'Forward_Kept_Region_bp', 'Forward_Hit_30%_Limit',
+                           'Reverse_Raw_Length', 'Reverse_Trimmed_Length', 'Reverse_Kept_Region_bp', 'Reverse_Hit_30%_Limit'],
+                "Value": [
+                    alignment_result.stats['matches'],
+                    alignment_result.stats['mismatches'],
+                    alignment_result.stats['gaps'],
+                    alignment_result.score,
+                    len(alignment_result.consensus),
+                    params['quality_cutoff'],
+                    params['window_size'],
+                    params['adjustment'],
+                    "Window Mean",
+                    forward_raw_len,
+                    len(forward_trimmed.trimmed_seq),
+                    f"{forward_trimmed.start_pos + 1} - {forward_trimmed.end_pos + 1}",
+                    "Yes" if forward_trimmed.limit_exceeded else "No",
+                    reverse_raw_len,
+                    len(reverse_trimmed.trimmed_seq),
+                    f"{reverse_trimmed.start_pos + 1} - {reverse_trimmed.end_pos + 1}",
+                    "Yes" if reverse_trimmed.limit_exceeded else "No"
+                ]
             }
             report_df = pd.DataFrame(report_data)
             report_csv = report_df.to_csv(index=False)
@@ -873,7 +904,6 @@ class SangerAnalysisApp:
             )
 
         with col3:
-            # Trimmed sequences
             trimmed_fasta = f">Forward_Trimmed_{datetime.now().strftime('%Y%m%d_%H%M%S')}\n{forward_trimmed.trimmed_seq}\n>Reverse_Trimmed_RC_{datetime.now().strftime('%Y%m%d_%H%M%S')}\n{reverse_trimmed_rc}"
             st.download_button(
                 label="Download Trimmed Sequences",
@@ -884,7 +914,6 @@ class SangerAnalysisApp:
 
         if col4 is not None and blast_df is not None and not blast_df.empty:
             with col4:
-                # BLAST results download
                 blast_csv = blast_df.to_csv(index=False)
                 st.download_button(
                     label="Download BLAST Results (CSV)",
@@ -893,7 +922,6 @@ class SangerAnalysisApp:
                     mime="text/csv"
                 )
 
-                # Also provide BLAST results in tab-delimited format for further analysis
                 blast_tsv = blast_df.to_csv(index=False, sep='\t')
                 st.download_button(
                     label="Download BLAST Results (TSV)",
@@ -907,10 +935,20 @@ class SangerAnalysisApp:
         self.setup_page()
         params = self.setup_sidebar()
 
-        forward_data, reverse_data = self.handle_file_upload()
+        forward_data, reverse_data, fw_filename = self.handle_file_upload()
 
         if forward_data is not None and reverse_data is not None:
             try:
+                timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                if params.get('use_smart_name', True) and fw_filename:
+                    name_no_ext = fw_filename.rsplit('.', 1)[0]
+                    parts = name_no_ext.split('_')
+                    # ดึงส่วนที่ 3 (Index 2
+                    sample_id = parts[2] if len(parts) >= 3 else name_no_ext
+                    header_id = f"{sample_id}_{timestamp}"
+                else:
+                    header_id = f"Consensus_Sequence_{timestamp}"
+
                 # Display raw sequence information
                 self.display_raw_sequence_info(forward_data, reverse_data)
 
@@ -918,15 +956,16 @@ class SangerAnalysisApp:
                 forward_trimmed, reverse_trimmed, reverse_trimmed_rc, reverse_qual_rc = self.perform_quality_trimming(
                     forward_data, reverse_data, params)
 
-                # Generate consensus
-                alignment_result = self.generate_consensus(forward_trimmed, reverse_trimmed, reverse_trimmed_rc, reverse_qual_rc, params)
+                # Generate consensus 
+                alignment_result = self.generate_consensus(forward_trimmed, reverse_trimmed, reverse_trimmed_rc, reverse_qual_rc, params, header_id)
 
                 if alignment_result:
                     # Run BLAST analysis if requested
                     blast_df = self.run_blast_analysis(alignment_result.consensus, params)
 
                     # Provide download options
-                    self.provide_downloads(alignment_result, forward_trimmed, reverse_trimmed_rc, params, blast_df)
+                    self.provide_downloads(alignment_result, forward_trimmed, reverse_trimmed, reverse_trimmed_rc, params, blast_df, 
+                                           len(forward_data.sequence), len(reverse_data.sequence), header_id)
 
             except Exception as e:
                 st.error(f"An error occurred during analysis: {e}")
@@ -943,10 +982,4 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
-
-
-
-
 
