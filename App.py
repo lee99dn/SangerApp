@@ -98,35 +98,51 @@ class SequenceQualityTrimmer:
         if len(seq) < window_size:
             return TrimResult(seq, qual, 0, len(seq) - 1, is_failed=True)
 
-        # --- 1. Find 5' Start (Forward Scan) ---
-        first_start = None
-        for i in range(len(qual) - window_size + 1):
-            window = qual[i:i + window_size]
-            window_mean = np.mean(window)
-            if window_mean >= cutoff:
-                first_start = i
-                break 
-
-        if first_start is None:
-            msg = f"[{read_name}] No window of size {window_size} found with quality >= {cutoff}. Returning full sequence."
+        # --- 1. Calculate All Window Means (Pre-compute for efficiency) ---
+        window_means = [np.mean(qual[i:i + window_size]) for i in range(len(qual) - window_size + 1)]
+        
+        best_mean = max(window_means)
+        
+        if best_mean < cutoff:
+            msg = f"[{read_name}] Max window quality ({best_mean:.1f}) is below cutoff {cutoff}. Sequence rejected."
             if warn_callback:
                 warn_callback(msg)
             else:
                 warnings.warn(msg)
             return TrimResult(seq, qual, 0, len(seq) - 1, is_failed=True)
 
-        # --- 2. Find 3' End (Backward Scan) ---
-        end = len(qual) - 1
-        for i in range(len(qual) - window_size, -1, -1):
-            window = qual[i:i + window_size]
-            if np.mean(window) >= cutoff:
-                end = i + window_size - 1
+        # --- 2. Find 5' Start (First Window / Forward Scan) ---
+        # Scan from left to right to find the very first acceptable window.
+        # This is more flexible and preserves sequence length even if there are local dips later.
+        first_start = 0
+        for i in range(len(window_means)):
+            if window_means[i] >= cutoff:
+                first_start = i
+                break
+
+        # --- 3. Locate Core Anchor for 3' End ---
+        # Find the index of the highest quality window to anchor the 3' scan
+        anchor_idx = window_means.index(best_mean)
+
+        # --- 4. Find 3' End (Core-to-Right Scan) ---
+        # Scan forward from the anchor to the right (3' direction)
+        # Stop immediately when the first window drops below the cutoff to avoid far-right false spikes.
+        last_start = anchor_idx
+        for i in range(anchor_idx, len(window_means)):
+            if window_means[i] >= cutoff:
+                last_start = i
+            else:
                 break
                 
+        # Convert the index of the last acceptable window to the actual base position
+        end = last_start + window_size - 1
+
+        # Ensure boundaries do not cross each other
         end = max(first_start, end)
         end = min(len(seq) - 1, end)
 
-        # --- 3. Apply Manual Adjustment (5' end only) ---
+        # --- 5. Apply Manual Adjustment (5' end only) ---
+        # Apply safety margin to avoid primer artifacts
         start = first_start + adjustment
         start = max(0, start)
         start = min(start, end)
@@ -441,7 +457,7 @@ class Visualizer:
             y_mean = []
             for i in range(len(quality_scores) - window_size + 1):
                 y_mean.append(np.mean(quality_scores[i:i+window_size]))      
-                x_mean.append(i + 1 + (window_size - 1) / 2.0)
+                x_mean.append(i + window_size)
             ax.plot(x_mean, y_mean, color='darkorange', alpha=1, linewidth=2, label=f'Window Mean ({window_size}bp)')
             ax.axhline(y=cutoff, color='r', linestyle='--', alpha=0.7, label=f'Cutoff ({cutoff})')
 
