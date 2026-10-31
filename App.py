@@ -751,55 +751,59 @@ class SangerAnalysisApp:
                           header_id: str = "Consensus_Sequence"):
         st.header("💾 Download Results")
 
-        if blast_df is not None and not blast_df.empty:
-            col1, col2, col3, col4 = st.columns(4)
-        else:
-            col1, col2, col3 = st.columns(3)
-            col4 = None
+        @st.fragment
+        def render_download_buttons():
+            if blast_df is not None and not blast_df.empty:
+                col1, col2, col3, col4 = st.columns(4)
+            else:
+                col1, col2, col3 = st.columns(3)
+                col4 = None
 
-        with col1:
-            consensus_fasta = f">{header_id}\n{alignment_result.consensus}\n"
-            st.download_button(label="Download Consensus (FASTA)", data=consensus_fasta, file_name=f"{header_id}.fasta", mime="text/plain")
+            with col1:
+                consensus_fasta = f">{header_id}\n{alignment_result.consensus}\n"
+                st.download_button(label="Download Consensus (FASTA)", data=consensus_fasta, file_name=f"{header_id}.fasta", mime="text/plain")
 
-        with col2:
-            report_data = {
-                "Metric": ["Matches", "Mismatches", "Gaps", "Alignment Score", 'Consensus_Length',
-                           'Quality_Cutoff', 'Window_Size', 'Start_Adjustment_5_end', 'Threshold_Type',
-                           'Forward_Raw_Length', 'Forward_Trimmed_Length', 'Forward_Kept_Region_bp',
-                           'Reverse_Raw_Length', 'Reverse_Trimmed_Length', 'Reverse_Kept_Region_bp'],
-                "Value": [
-                    alignment_result.stats['matches'],
-                    alignment_result.stats['mismatches'],
-                    alignment_result.stats['gaps'],
-                    alignment_result.score,
-                    len(alignment_result.consensus),
-                    params['quality_cutoff'],
-                    params['window_size'],
-                    params['adjustment'],
-                    "Window Mean",
-                    forward_raw_len,
-                    len(forward_trimmed.trimmed_seq),
-                    f"{forward_trimmed.start_pos + 1} - {forward_trimmed.end_pos + 1}" if not forward_trimmed.is_failed else "Failed",
-                    reverse_raw_len,
-                    len(reverse_trimmed.trimmed_seq),
-                    f"{reverse_trimmed.start_pos + 1} - {reverse_trimmed.end_pos + 1}" if not reverse_trimmed.is_failed else "Failed"
-                ]
-            }
-            report_df = pd.DataFrame(report_data)
-            report_csv = report_df.to_csv(index=False)
-            st.download_button(label="Download Statistics (CSV)", data=report_csv, file_name=f"sanger_analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv", mime="text/csv")
+            with col2:
+                report_data = {
+                    "Metric": ["Matches", "Mismatches", "Gaps", "Alignment Score", 'Consensus_Length',
+                               'Quality_Cutoff', 'Window_Size', 'Start_Adjustment_5_end', 'Threshold_Type',
+                               'Forward_Raw_Length', 'Forward_Trimmed_Length', 'Forward_Kept_Region_bp',
+                               'Reverse_Raw_Length', 'Reverse_Trimmed_Length', 'Reverse_Kept_Region_bp'],
+                    "Value": [
+                        alignment_result.stats['matches'],
+                        alignment_result.stats['mismatches'],
+                        alignment_result.stats['gaps'],
+                        alignment_result.score,
+                        len(alignment_result.consensus),
+                        params['quality_cutoff'],
+                        params['window_size'],
+                        params['adjustment'],
+                        "Window Mean",
+                        forward_raw_len,
+                        len(forward_trimmed.trimmed_seq),
+                        f"{forward_trimmed.start_pos + 1} - {forward_trimmed.end_pos + 1}" if not forward_trimmed.is_failed else "Failed",
+                        reverse_raw_len,
+                        len(reverse_trimmed.trimmed_seq),
+                        f"{reverse_trimmed.start_pos + 1} - {reverse_trimmed.end_pos + 1}" if not reverse_trimmed.is_failed else "Failed"
+                    ]
+                }
+                report_df = pd.DataFrame(report_data)
+                report_csv = report_df.to_csv(index=False)
+                st.download_button(label="Download Statistics (CSV)", data=report_csv, file_name=f"sanger_analysis_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv", mime="text/csv")
 
-        with col3:
-            trimmed_fasta = f">Forward_Trimmed_{datetime.now().strftime('%Y%m%d_%H%M%S')}\n{forward_trimmed.trimmed_seq}\n>Reverse_Trimmed_RC_{datetime.now().strftime('%Y%m%d_%H%M%S')}\n{reverse_trimmed_rc}"
-            st.download_button(label="Download Trimmed Sequences", data=trimmed_fasta, file_name=f"trimmed_sequences_{datetime.now().strftime('%Y%m%d_%H%M%S')}.fasta", mime="text/plain")
+            with col3:
+                trimmed_fasta = f">Forward_Trimmed_{datetime.now().strftime('%Y%m%d_%H%M%S')}\n{forward_trimmed.trimmed_seq}\n>Reverse_Trimmed_RC_{datetime.now().strftime('%Y%m%d_%H%M%S')}\n{reverse_trimmed_rc}"
+                st.download_button(label="Download Trimmed Sequences", data=trimmed_fasta, file_name=f"trimmed_sequences_{datetime.now().strftime('%Y%m%d_%H%M%S')}.fasta", mime="text/plain")
 
-        if col4 is not None and blast_df is not None and not blast_df.empty:
-            with col4:
-                blast_csv = blast_df.to_csv(index=False)
-                st.download_button(label="Download BLAST Results (CSV)", data=blast_csv, file_name=f"blast_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv", mime="text/csv")
+            if col4 is not None and blast_df is not None and not blast_df.empty:
+                with col4:
+                    blast_csv = blast_df.to_csv(index=False)
+                    st.download_button(label="Download BLAST Results (CSV)", data=blast_csv, file_name=f"blast_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv", mime="text/csv")
 
-                blast_tsv = blast_df.to_csv(index=False, sep='\t')
-                st.download_button(label="Download BLAST Results (TSV)", data=blast_tsv, file_name=f"blast_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.tsv", mime="text/tab-separated-values")
+                    blast_tsv = blast_df.to_csv(index=False, sep='\t')
+                    st.download_button(label="Download BLAST Results (TSV)", data=blast_tsv, file_name=f"blast_results_{datetime.now().strftime('%Y%m%d_%H%M%S')}.tsv", mime="text/tab-separated-values")
+
+        render_download_buttons()
 
     def run(self):
         self.setup_page()
